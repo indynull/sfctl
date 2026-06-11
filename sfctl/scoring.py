@@ -9,25 +9,17 @@ from pathlib import Path
 from sfctl.config import data_dir
 from sfctl.models import Annotation, ModelScores
 
-
 def _safe_task_id(task_id: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", task_id)
-
-
 
 def scores_path(task_id: str) -> Path:
     return data_dir() / f"{_safe_task_id(task_id)}_scores.json"
 
-
 def justification_path(task_id: str) -> Path:
     return data_dir() / f"{_safe_task_id(task_id)}.md"
 
-
-
 def annotations_path(task_id: str) -> Path:
     return data_dir() / f"{_safe_task_id(task_id)}_annotations.json"
-
-
 
 def scores_from_annotations(annotations: list[list[Annotation]]) -> list[ModelScores]:
     """Compute ModelScores per model from structured annotations."""
@@ -39,8 +31,6 @@ def scores_from_annotations(annotations: list[list[Annotation]]) -> list[ModelSc
             setattr(s, ctx, getattr(s, ctx) + a.sentiment)
         scores.append(s)
     return scores
-
-
 
 def _migrate_legacy(task_id: str, num_models: int) -> tuple[list[list[Annotation]], str]:
     """Read old _scores.json + .md and convert to annotations + summary."""
@@ -66,7 +56,6 @@ def _migrate_legacy(task_id: str, num_models: int) -> tuple[list[list[Annotation
     if jp.exists():
         summary = jp.read_text(encoding="utf-8")
     return annotations, summary
-
 
 def load_annotations(
     task_id: str, num_models: int, history: list | None = None
@@ -110,7 +99,6 @@ def load_annotations(
                 summary = last_just
     return [[] for _ in range(num_models)], summary
 
-
 def save_annotations(
     task_id: str, annotations: list[list[Annotation]], summary: str
 ) -> None:
@@ -120,91 +108,3 @@ def save_annotations(
         data[str(i)] = [a.to_dict() for a in model_anns]
     data["summary"] = summary
     annotations_path(task_id).write_text(json.dumps(data, indent=2))
-
-
-
-def _model_letter(index: int) -> str:
-    return chr(65 + index)
-
-
-def render_annotations_md(
-    annotations: list[list[Annotation]], summary: str
-) -> str:
-    """Render all annotations + summary as readable markdown."""
-    parts: list[str] = []
-
-    for i, model_anns in enumerate(annotations):
-        if not model_anns:
-            continue
-        # Score tallies per context
-        tallies: dict[str, int] = {}
-        for a in model_anns:
-            ctx = a.context if a.context in ("overall", "response", "code") else "overall"
-            tallies[ctx] = tallies.get(ctx, 0) + a.sentiment
-        tally_parts = []
-        for ctx in ("code", "response", "overall"):
-            v = tallies.get(ctx, 0)
-            if v != 0:
-                sign = f"+{v}" if v > 0 else str(v)
-                tally_parts.append(f"{ctx}: {sign}")
-        tally_str = f"  ({', '.join(tally_parts)})" if tally_parts else ""
-
-        parts.append(f"## Model {_model_letter(i)}{tally_str}\n")
-
-        for a in model_anns:
-            sentiment_marker = {1: "(+1)", -1: "(-1)", 0: "(0)"}[a.sentiment]
-            line = sentiment_marker
-            if a.comment:
-                line += f" {a.comment}"
-            parts.append(line)
-            if a.filename and a.line_ref:
-                parts.append(f"`{a.filename}:{a.line_ref}`")
-            elif a.filename:
-                parts.append(f"`{a.filename}`")
-            if a.snippet:
-                parts.append(f"```diff\n{a.snippet}\n```")
-            parts.append("")  # blank line between annotations
-
-    if summary.strip():
-        if parts:
-            parts.append("---\n")
-        parts.append("## Summary\n")
-        parts.append(summary.strip())
-        parts.append("")
-
-    return "\n".join(parts)
-
-
-
-def load_scores(task_id: str, num_models: int) -> list[ModelScores]:
-    scores = [ModelScores() for _ in range(num_models)]
-    path = scores_path(task_id)
-    if path.exists():
-        saved = json.loads(path.read_text())
-        for k, v in saved.items():
-            idx = int(k)
-            if 0 <= idx < num_models:
-                scores[idx] = ModelScores.from_dict(v)
-    return scores
-
-
-def save_scores(task_id: str, scores: list[ModelScores]) -> None:
-    data = {str(i): s.to_dict() for i, s in enumerate(scores)}
-    scores_path(task_id).write_text(json.dumps(data, indent=2))
-
-
-def load_justification(task_id: str, history: list) -> str:
-    path = justification_path(task_id)
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-    if not isinstance(history, list):
-        history = [history]
-    if history:
-        last_just = (history[-1].get("justification") or {}).get("value", "")
-        if isinstance(last_just, str) and last_just.strip():
-            return last_just
-    return ""
-
-
-def save_justification(task_id: str, content: str) -> None:
-    justification_path(task_id).write_text(content, encoding="utf-8")

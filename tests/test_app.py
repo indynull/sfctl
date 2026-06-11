@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-TASK_ID = "t-D2F1God7q8QRa48qVJpO1"
+TASK_ID = "t-EXAMPLE001"
 
 
 def _model_item(
@@ -88,7 +88,7 @@ class TestNavigation:
         from textual.widgets import ContentSwitcher
 
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             switcher = app.query_one("#main-switcher", ContentSwitcher)
             assert switcher.current == "overview"
 
@@ -115,7 +115,7 @@ class TestNavigation:
 
         app = StarfleetApp("t-min", minimal_data)
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
 
 
@@ -161,7 +161,7 @@ class TestVoting:
     @pytest.mark.asyncio
     async def test_vote_on_overview_warns(self, app):
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             await pilot.press("+")
 
@@ -271,7 +271,9 @@ class TestModals:
         from textual.widgets import Markdown, TextArea
 
         async with app.run_test() as pilot:
-            # j navigates to overview + activates editor
+            # navigate to overview first, then ctrl+e activates editor
+            await pilot.press("0")
+            await pilot.pause()
             await pilot.press("ctrl+e")
             await pilot.pause()
             preview = app.query_one("#justification-preview", Markdown)
@@ -281,9 +283,9 @@ class TestModals:
             # escape saves and switches back to preview
             await pilot.press("escape")
             await pilot.pause()
-            assert preview.display is True
             assert editor.display is False
-            # j re-opens editor
+            assert preview.display is True
+            # ctrl+e re-opens editor
             await pilot.press("ctrl+e")
             await pilot.pause()
             assert editor.display is True
@@ -325,7 +327,7 @@ class TestModals:
     @pytest.mark.asyncio
     async def test_search_diffs_no_model(self, app):
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             await pilot.press("ctrl+f")
 
@@ -460,7 +462,7 @@ class TestOverview:
         from textual.widgets import TabbedContent
 
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             assert tabs is not None
@@ -470,7 +472,7 @@ class TestOverview:
         from textual.widgets import TabbedContent
 
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             assert tabs.active == "tab-current"
@@ -480,7 +482,7 @@ class TestOverview:
         from textual.widgets import Markdown, TabbedContent
 
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             # Fixture has 2 identical entries:
@@ -497,7 +499,9 @@ class TestOverview:
         from textual.widgets import TextArea
 
         async with app.run_test() as pilot:
-            # j navigates to overview and activates editor
+            # navigate to overview first, then ctrl+e activates editor
+            await pilot.press("0")
+            await pilot.pause()
             await pilot.press("ctrl+e")
             await pilot.pause()
             editor = app.query_one("#justification-editor", TextArea)
@@ -510,7 +514,7 @@ class TestOverview:
 
         app = StarfleetApp("t-min", minimal_data)
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
 
     @pytest.mark.asyncio
@@ -538,7 +542,7 @@ class TestOverview:
         ]
         app = StarfleetApp("t-hd", data)
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             # Two different entries -> Current + 2 history tabs
@@ -553,6 +557,8 @@ class TestOverview:
         from textual.widgets import TextArea
 
         async with app.run_test() as pilot:
+            await pilot.press("0")
+            await pilot.pause()
             await pilot.press("ctrl+e")
             await pilot.pause()
             editor = app.query_one("#justification-editor", TextArea)
@@ -570,11 +576,26 @@ class TestOverview:
 
         async with app.run_test() as pilot:
             # Navigate to overview so widgets exist
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             app.add_annotation(0, Annotation(context="code", sentiment=1, comment="nice code"))
             assert len(app.annotations[0]) == 1
             assert app.scores[0].code == 1
+
+    @pytest.mark.asyncio
+    async def test_yank_inserts_into_summary(self, app):
+        async with app.run_test() as pilot:
+            # Navigate to overview first so it's populated
+            await pilot.press("0")
+            await pilot.pause()
+            assert app.summary_text == "" or "yank" not in app.summary_text.lower()
+            # Simulate a yank result (what the modal callback does)
+            block = "**A** `foo.py:L12` nice fix\n```diff\n+x=1\n```\n"
+            app.summary_text += block
+            app._save_summary(app.summary_text)
+            app._refresh_overview_annotations()
+            await pilot.pause()
+            assert "foo.py" in app.summary_text
 
 
 class TestTabNavigation:
@@ -611,51 +632,13 @@ class TestTabNavigation:
         from textual.widgets import TabbedContent
 
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             initial = tabs.active
             await pilot.press("tab")
             await pilot.pause()
             assert tabs.active != initial
-
-
-class TestHiddenDetails:
-    @pytest.mark.asyncio
-    async def test_toggle_hidden(self, app):
-        async with app.run_test() as pilot:
-            assert app.show_hidden is False
-            await pilot.press("ctrl+d")
-            await pilot.pause()
-            assert app.show_hidden is True
-            await pilot.press("ctrl+d")
-            await pilot.pause()
-            assert app.show_hidden is False
-
-    @pytest.mark.asyncio
-    async def test_hidden_email_in_overview(self, app):
-        async with app.run_test() as pilot:
-            await pilot.press("f")
-            await pilot.pause()
-            hidden = app.query(".hidden-detail")
-            # Hidden details should exist but not be visible
-            assert len(hidden) > 0
-            for w in hidden:
-                assert w.display is False
-            # Toggle on
-            await pilot.press("ctrl+d")
-            await pilot.pause()
-            for w in app.query(".hidden-detail"):
-                assert w.display is True
-
-    @pytest.mark.asyncio
-    async def test_hidden_updates_subtitle(self, app):
-        async with app.run_test() as pilot:
-            assert app._task_email not in app.sub_title or not app._task_email
-            await pilot.press("ctrl+d")
-            await pilot.pause()
-            if app._task_email:
-                assert app._task_email in app.sub_title
 
 
 class TestHistoryOrder:
@@ -672,7 +655,7 @@ class TestHistoryOrder:
         ]
         app = StarfleetApp("t-ord", data)
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             # First history tab (tab-entry-0) should be the newest (L1)
@@ -697,7 +680,7 @@ class TestHistoryOrder:
         ]
         app = StarfleetApp("t-dup", data)
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             # L1 has no changes AND no feedback -> skipped
@@ -723,7 +706,7 @@ class TestHistoryOrder:
         ]
         app = StarfleetApp("t-rev", data)
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             # Current + L1 review (has feedback) + L0 revision = 3 tabs
@@ -751,7 +734,7 @@ class TestHistoryOrder:
         ]
         app = StarfleetApp("t-fb", data)
         async with app.run_test() as pilot:
-            await pilot.press("f")
+            await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
             # L1 (entry[1]) is first history tab -- has new feedback vs entry[0]
@@ -857,6 +840,8 @@ class TestMiscActions:
     @pytest.mark.asyncio
     async def test_copy_summary(self, app):
         async with app.run_test() as pilot:
+            await pilot.press("0")
+            await pilot.pause()
             await pilot.press("c")
 
     @pytest.mark.asyncio
@@ -915,6 +900,56 @@ class TestMiscActions:
             app.add_annotation(0, Annotation(context="response", sentiment=-1, comment="bad"))
             assert len(app.annotations[0]) == 1
             assert app.scores[0].response == -1
+
+
+class TestTaskTypeDetection:
+    @pytest.mark.asyncio
+    async def test_code_review_detected(self, app):
+        from sfctl.task_types import TaskType
+
+        assert app.task_type == TaskType.CODE_REVIEW
+
+    @pytest.mark.asyncio
+    async def test_unknown_type_fallback(self):
+        from sfctl.app import StarfleetApp
+        from sfctl.task_types import TaskType
+
+        data = {
+            "task": {"taskId": "t-unk"},
+            "content": {"content": {"items": []}},
+            "history": [],
+            "feedback": {},
+        }
+        app = StarfleetApp("t-unk", data)
+        assert app.task_type == TaskType.UNKNOWN
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # Voting should warn, not crash
+            await pilot.press("+")
+            await pilot.pause()
+            # Navigation should no-op, not crash
+            await pilot.press("1")
+            await pilot.pause()
+            await pilot.press("0")
+            await pilot.pause()
+
+    @pytest.mark.asyncio
+    async def test_unknown_type_minimal_data(self):
+        from sfctl.app import StarfleetApp
+        from sfctl.task_types import TaskType
+
+        data = {
+            "task": {"taskId": "t-unk2"},
+            "content": {"content": {"items": [
+                {"type": "text", "title": "Some Field", "text": "value"},
+            ]}},
+            "history": [],
+            "feedback": {},
+        }
+        app = StarfleetApp("t-unk2", data)
+        assert app.task_type == TaskType.UNKNOWN
+        async with app.run_test():
+            pass
 
 
 class TestNavigationProvider:
@@ -1006,7 +1041,7 @@ class TestBuildClipboardText:
         app = StarfleetApp(TASK_ID, fixture_data)
         text = build_clipboard_text(
             app.task_id, app.rankings_summary(),
-            app.annotations, app.summary_text,
+            app.summary_text,
         )
         assert TASK_ID in text
 

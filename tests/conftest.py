@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "task_sample.json"
-TASK_ID = "t-D2F1God7q8QRa48qVJpO1"
+TASK_ID = "t-EXAMPLE001"
 
 
 @pytest.fixture
@@ -57,10 +57,12 @@ def app(make_app):
 
 @pytest.fixture
 def minimal_data():
-    """Minimal valid data dict for edge-case tests."""
+    """Minimal valid data dict for edge-case tests (code review with no models)."""
     return {
         "task": {"taskId": "t-min"},
-        "content": {"content": {"items": []}},
+        "content": {"content": {"items": [
+            {"type": "collection", "title": "Model Traces", "items": []},
+        ]}},
         "history": [],
         "feedback": {},
     }

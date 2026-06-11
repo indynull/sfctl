@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
@@ -13,16 +12,14 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
 
 from sfctl import ids
-from sfctl.ids import Context
 
 if TYPE_CHECKING:
-    from sfctl.models import Annotation, FileDiff
+    from sfctl.models import FileDiff
 
+class YankCommentModal(ModalScreen[tuple[int, str] | None]):
+    """Modal to yank a diff snippet into the justification.
 
-class YankCommentModal(ModalScreen[tuple[int, "Annotation"] | None]):
-    """Modal to yank a snippet as a structured annotation with sentiment.
-
-    Dismisses with (model_index, Annotation) on submit, None on cancel.
+    Dismisses with (model_index, formatted_markdown) on submit, None on cancel.
     """
 
     BINDINGS = [
@@ -43,7 +40,6 @@ class YankCommentModal(ModalScreen[tuple[int, "Annotation"] | None]):
         self.filename = filename
         self.snippet = snippet
         self.line_ref = line_ref
-        self._sentiment = 0
 
     def compose(self) -> ComposeResult:
         with Container(id=ids.YANK_MODAL):
@@ -57,42 +53,18 @@ class YankCommentModal(ModalScreen[tuple[int, "Annotation"] | None]):
                 show_line_numbers=False,
                 id=ids.YANK_PREVIEW,
             )
-            with Horizontal(id=ids.YANK_SENTIMENT):
-                yield Button("+1", id=ids.YANK_POS, variant="success")
-                yield Button("0", id=ids.YANK_NEU, variant="default", classes="selected")
-                yield Button("-1", id=ids.YANK_NEG, variant="error")
             yield Input(placeholder="optional comment", id=ids.YANK_COMMENT)
 
     def on_mount(self) -> None:
         self.query_one(f"#{ids.YANK_COMMENT}", Input).focus()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        btn_id = event.button.id
-        if btn_id == ids.YANK_POS:
-            self._sentiment = 1
-        elif btn_id == ids.YANK_NEG:
-            self._sentiment = -1
-        else:
-            self._sentiment = 0
-        for b in self.query(f"#{ids.YANK_SENTIMENT} Button"):
-            b.remove_class("selected")
-        event.button.add_class("selected")
-        self.query_one(f"#{ids.YANK_COMMENT}", Input).focus()
-
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        from sfctl.models import Annotation
-
         comment = event.value.strip()
-        annotation = Annotation(
-            filename=self.filename,
-            line_ref=self.line_ref,
-            snippet=self.snippet,
-            comment=comment,
-            context=Context.CODE,
-            sentiment=self._sentiment,
-        )
-        self.dismiss((self.model_index, annotation))
-
+        header = f"**{self.model_name}** `{self.filename}:{self.line_ref}`"
+        if comment:
+            header += f" {comment}"
+        block = f"{header}\n```diff\n{self.snippet}\n```\n"
+        self.dismiss((self.model_index, block))
 
 class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
     """Scoped file search for the current model's diffs.
@@ -146,7 +118,6 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
         filename = str(event.option.prompt)
         self.dismiss((self.model_index, filename))
 
-
 class HelpModal(ModalScreen):
     """Scrollable modal for help text or tutorial content."""
 
@@ -165,26 +136,22 @@ class HelpModal(ModalScreen):
             with ScrollableContainer():
                 yield Static(self._content)
 
-
 def _strip_markup(text: str) -> str:
     """Remove Rich markup tags from a string."""
-    return re.sub(r"\[/?[a-z_ #0-9-]*\]", "", text)
+    from rich.text import Text
 
+    return Text.from_markup(text).plain
 
 def build_clipboard_text(
     task_id: str,
     rankings_summary: str,
-    annotations: list,
     summary_text: str,
 ) -> str:
-    """Build plain-text summary of rankings and annotations for clipboard."""
-    from sfctl.scoring import render_annotations_md
-
+    """Build plain-text summary of rankings and justification for clipboard."""
     parts = [f"Task: {task_id}"]
     rankings = _strip_markup(rankings_summary)
     if rankings:
         parts.append(f"\nRankings: {rankings}")
-    rendered = render_annotations_md(annotations, summary_text)
-    if rendered.strip():
-        parts.append(f"\n{rendered}")
+    if summary_text.strip():
+        parts.append(f"\n{summary_text.strip()}")
     return "\n".join(parts)

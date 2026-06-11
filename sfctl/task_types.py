@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-
 class TaskType(StrEnum):
     CODE_REVIEW = "code_review"
     UNKNOWN = "unknown"
-
 
 def detect_task_type(data: dict) -> TaskType:
     """Detect task type from the raw API response data.

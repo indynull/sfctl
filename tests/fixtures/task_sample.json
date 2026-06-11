@@ -1,25 +1,25 @@
 {
   "task": {
-    "taskId": "t-D2F1God7q8QRa48qVJpO1",
+    "taskId": "t-EXAMPLE001",
     "status": "ready",
-    "projectId": "p-iAGos2k9tS4CUcPa9dJnh",
+    "projectId": "p-EXAMPLE",
     "createdAt": "2026-06-02T17:06:43.554Z",
-    "contentUrl": "t-D2F1God7q8QRa48qVJpO1_content.json",
-    "annotationUrl": "t-D2F1God7q8QRa48qVJpO1_annotation.json",
+    "contentUrl": "t-EXAMPLE_content.json",
+    "annotationUrl": "t-EXAMPLE_annotation.json",
     "reviewLevel": 2,
     "priority": 0,
     "claimExpiresAt": null,
     "metadata": {
       "taskType": "labeling",
-      "lastClaimedBy": "asaifee@ext.teachx.ai",
-      "lastModifiedBy": "asaifee@ext.teachx.ai",
+      "lastClaimedBy": "user1@example.com",
+      "lastModifiedBy": "user1@example.com",
       "feedback": {
         "entries": [
           {
             "reviewLevel": 1,
             "message": "Thanks for your work on this task!\n\nYou've provided a clear summary of the most important aspects of the prompt by highlighting code correctness, model loading and inference, and test cases passing. \n\nYour justification for picking Model C as the best checks out due to its narrowly scoped changes only in `modeling_utils.py` and the clean ordered step breakdown & strong relevant test verification. There are sufficiently detailed examples showing the weaknesses of Model A & B as well makes the overall ranking clear. \n \nKeep up the good work!",
             "score": 7,
-            "email": "asaifee@ext.teachx.ai",
+            "email": "user1@example.com",
             "timestamp": 1781053990265,
             "sbq": false
           }
@@ -33,21 +33,21 @@
         "timestamp": "2026-06-03T19:30:50.520Z",
         "fromLevel": 0,
         "toLevel": 1,
-        "userId": "athaninayagam@teachx.ai"
+        "userId": "user2@example.com"
       },
       {
         "type": "transition",
         "timestamp": "2026-06-10T01:13:10.558Z",
         "fromLevel": 1,
         "toLevel": 2,
-        "userId": "asaifee@ext.teachx.ai",
+        "userId": "user1@example.com",
         "passQA": true
       }
     ],
     "claimableByBadges": [],
     "claimableByEmail": null,
     "collaborators": [],
-    "contentHash": "104eb752916fcc3b6b085d536ffde0f2fdc9d5a91c0d4f7d03fd7ff4015ff883",
+    "contentHash": "0000000000000000000000000000000000000000000000000000000000000000",
     "tags": [
       {
         "id": "lang-python",
@@ -90,14 +90,14 @@
     ],
     "taskEvents": [
       {
-        "taskEventId": "te-hENKgstACdncpvmlENdUk",
-        "userId": "106378185522805547028",
+        "taskEventId": "ta-1ec45ebc766d",
+        "userId": "user-001",
         "role": "user",
         "timezone": "America/Los_Angeles",
         "podId": null,
-        "taskId": "t-D2F1God7q8QRa48qVJpO1",
-        "projectId": "p-iAGos2k9tS4CUcPa9dJnh",
-        "workstreamId": "m6HKTE7C4qwhcpghC1iy1",
+        "taskId": "t-EXAMPLE001",
+        "projectId": "p-EXAMPLE",
+        "workstreamId": "ws-EXAMPLE",
         "isConsensus": false,
         "isBurst": false,
         "targetTaskEventId": null,
@@ -105,7 +105,7 @@
         "score": null,
         "feedback": null,
         "passQA": null,
-        "billedAmount": 81.83162222222222,
+        "billedAmount": 0,
         "startTime": "1780507684930",
         "type": "submit",
         "leadTime": 7364846,
@@ -120,26 +120,26 @@
         "toReviewLevel": 1,
         "timestamp": "2026-06-03T19:30:50.520Z",
         "editCount": 0,
-        "sourceLogId": "l-d1o2GTje8NttpJL8SUTba",
+        "sourceLogId": "so-9880a9f759c2",
         "isReset": false
       },
       {
-        "taskEventId": "te-RuPahpFWaEdOgahZ9Gytz",
-        "userId": "108714700931150041815",
+        "taskEventId": "ta-807cb2eabd94",
+        "userId": "user-002",
         "role": "user",
         "timezone": "America/Vancouver",
         "podId": null,
-        "taskId": "t-D2F1God7q8QRa48qVJpO1",
-        "projectId": "p-iAGos2k9tS4CUcPa9dJnh",
-        "workstreamId": "m6HKTE7C4qwhcpghC1iy1",
+        "taskId": "t-EXAMPLE001",
+        "projectId": "p-EXAMPLE",
+        "workstreamId": "ws-EXAMPLE",
         "isConsensus": false,
         "isBurst": false,
-        "targetTaskEventId": "te-hENKgstACdncpvmlENdUk",
-        "targetUserId": "106378185522805547028",
+        "targetTaskEventId": "ta-1ec45ebc766d",
+        "targetUserId": "user-001",
         "score": 7,
         "feedback": "Thanks for your work on this task!\n\nYou've provided a clear summary of the most important aspects of the prompt by highlighting code correctness, model loading and inference, and test cases passing. \n\nYour justification for picking Model C as the best checks out due to its narrowly scoped changes only in `modeling_utils.py` and the clean ordered step breakdown & strong relevant test verification. There are sufficiently detailed examples showing the weaknesses of Model A & B as well makes the overall ranking clear. \n \nKeep up the good work!",
         "passQA": true,
-        "billedAmount": 2.274288888888889,
+        "billedAmount": 0,
         "startTime": "1781053784991",
         "type": "submit",
         "leadTime": 204686,
@@ -154,7 +154,7 @@
         "toReviewLevel": 2,
         "timestamp": "2026-06-10T01:13:10.558Z",
         "editCount": 0,
-        "sourceLogId": "l-voj7nCHgqIyoN6ZxhowYV",
+        "sourceLogId": "so-6d17de9e65be",
         "isReset": false
       }
     ]
@@ -164,71 +164,71 @@
       "coding_question": {
         "sessions": [
           {
-            "sessionId": "prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz",
-            "sandboxUrl": "https://hds-a5fdvxj1nxcz-8080-3bmak.vbrowser.hades-www.grok-sandbox.com",
+            "sessionId": "worker-example/session-example",
+            "sandboxUrl": "https://sandbox.example.com",
             "portUrls": {
-              "6080": "https://hds-a5fdvxj1nxcz-6080-coit6.vbrowser.hades-www.grok-sandbox.com",
-              "8080": "https://hds-a5fdvxj1nxcz-8080-3bmak.vbrowser.hades-www.grok-sandbox.com",
-              "47113": "https://hds-a5fdvxj1nxcz-47113-2jluj.vbrowser.hades-www.grok-sandbox.com",
-              "50051": "https://hds-a5fdvxj1nxcz-50051-ldt5g.vbrowser.hades-www.grok-sandbox.com"
+              "6080": "https://sandbox.example.com",
+              "8080": "https://sandbox.example.com",
+              "47113": "https://sandbox.example.com",
+              "50051": "https://sandbox.example.com"
             },
             "workdir": "/testbed/transformers",
-            "image": "us-docker.pkg.dev/xai-dev-research-code/swe/swearena/starfleet-coding-question:e85437403995-dbu-260409001219-amd64",
+            "image": "registry.example.com/image:latest",
             "createdAt": "2026-06-03T17:29:46.534Z",
             "status": "running",
             "side": "A"
           },
           {
-            "sessionId": "prod-hades-worker-97b5576-jfmhf/hds-8g5k1ife4fs1",
-            "sandboxUrl": "https://hds-8g5k1ife4fs1-8080-5ldi2.vbrowser.hades-www.grok-sandbox.com",
+            "sessionId": "worker-example/session-example",
+            "sandboxUrl": "https://sandbox.example.com",
             "portUrls": {
-              "6080": "https://hds-8g5k1ife4fs1-6080-j6282.vbrowser.hades-www.grok-sandbox.com",
-              "8080": "https://hds-8g5k1ife4fs1-8080-5ldi2.vbrowser.hades-www.grok-sandbox.com",
-              "47113": "https://hds-8g5k1ife4fs1-47113-skctb.vbrowser.hades-www.grok-sandbox.com",
-              "50051": "https://hds-8g5k1ife4fs1-50051-xo9xk.vbrowser.hades-www.grok-sandbox.com"
+              "6080": "https://sandbox.example.com",
+              "8080": "https://sandbox.example.com",
+              "47113": "https://sandbox.example.com",
+              "50051": "https://sandbox.example.com"
             },
             "workdir": "/testbed/transformers",
-            "image": "us-docker.pkg.dev/xai-dev-research-code/swe/swearena/starfleet-coding-question:e85437403995-dbu-260409001219-amd64",
+            "image": "registry.example.com/image:latest",
             "createdAt": "2026-06-03T17:30:46.595Z",
             "status": "running",
             "side": "B"
           },
           {
-            "sessionId": "prod-hades-worker-97b5576-6k2z2/hds-d2uv001gw462",
-            "sandboxUrl": "https://hds-d2uv001gw462-8080-dkqug.vbrowser.hades-www.grok-sandbox.com",
+            "sessionId": "worker-example/session-example",
+            "sandboxUrl": "https://sandbox.example.com",
             "portUrls": {
-              "6080": "https://hds-d2uv001gw462-6080-z64i9.vbrowser.hades-www.grok-sandbox.com",
-              "8080": "https://hds-d2uv001gw462-8080-dkqug.vbrowser.hades-www.grok-sandbox.com",
-              "47113": "https://hds-d2uv001gw462-47113-fowoo.vbrowser.hades-www.grok-sandbox.com",
-              "50051": "https://hds-d2uv001gw462-50051-jdr6j.vbrowser.hades-www.grok-sandbox.com"
+              "6080": "https://sandbox.example.com",
+              "8080": "https://sandbox.example.com",
+              "47113": "https://sandbox.example.com",
+              "50051": "https://sandbox.example.com"
             },
             "workdir": "/testbed/transformers",
-            "image": "us-docker.pkg.dev/xai-dev-research-code/swe/swearena/starfleet-coding-question:e85437403995-dbu-260409001219-amd64",
+            "image": "registry.example.com/image:latest",
             "createdAt": "2026-06-03T17:32:34.573Z",
             "status": "running",
             "side": "C"
           }
         ],
-        "hadesSessionId": "prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz",
+        "hadesSessionId": "worker-example/session-example",
         "rollouts": {
           "A": {
-            "traceRef": "coding-question/prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz/trace.json"
+            "traceRef": "trace/example-ref"
           },
           "B": {
-            "traceRef": "coding-question/prod-hades-worker-97b5576-jfmhf/hds-8g5k1ife4fs1/trace.json"
+            "traceRef": "trace/example-ref"
           },
           "C": {
-            "traceRef": "coding-question/prod-hades-worker-97b5576-6k2z2/hds-d2uv001gw462/trace.json"
+            "traceRef": "trace/example-ref"
           }
         },
         "rolloutA": {
-          "traceRef": "coding-question/prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz/trace.json"
+          "traceRef": "trace/example-ref"
         },
         "rollout": {
-          "traceRef": "coding-question/prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz/trace.json"
+          "traceRef": "trace/example-ref"
         },
         "rolloutB": {
-          "traceRef": "coding-question/prod-hades-worker-97b5576-jfmhf/hds-8g5k1ife4fs1/trace.json"
+          "traceRef": "trace/example-ref"
         }
       },
       "preference_ranking": {
@@ -281,9 +281,9 @@
         "_sf_rich": true,
         "value": "high"
       },
-      "userId": "106378185522805547028",
-      "email": "athaninayagam@teachx.ai",
-      "workstreamId": "m6HKTE7C4qwhcpghC1iy1",
+      "userId": "user-001",
+      "email": "user2@example.com",
+      "workstreamId": "ws-EXAMPLE",
       "isConsensus": false,
       "startTime": 1780507684930,
       "leadTime": 7364846,
@@ -309,71 +309,71 @@
       "coding_question": {
         "sessions": [
           {
-            "sessionId": "prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz",
-            "sandboxUrl": "https://hds-a5fdvxj1nxcz-8080-3bmak.vbrowser.hades-www.grok-sandbox.com",
+            "sessionId": "worker-example/session-example",
+            "sandboxUrl": "https://sandbox.example.com",
             "portUrls": {
-              "6080": "https://hds-a5fdvxj1nxcz-6080-coit6.vbrowser.hades-www.grok-sandbox.com",
-              "8080": "https://hds-a5fdvxj1nxcz-8080-3bmak.vbrowser.hades-www.grok-sandbox.com",
-              "47113": "https://hds-a5fdvxj1nxcz-47113-2jluj.vbrowser.hades-www.grok-sandbox.com",
-              "50051": "https://hds-a5fdvxj1nxcz-50051-ldt5g.vbrowser.hades-www.grok-sandbox.com"
+              "6080": "https://sandbox.example.com",
+              "8080": "https://sandbox.example.com",
+              "47113": "https://sandbox.example.com",
+              "50051": "https://sandbox.example.com"
             },
             "workdir": "/testbed/transformers",
-            "image": "us-docker.pkg.dev/xai-dev-research-code/swe/swearena/starfleet-coding-question:e85437403995-dbu-260409001219-amd64",
+            "image": "registry.example.com/image:latest",
             "createdAt": "2026-06-03T17:29:46.534Z",
             "status": "running",
             "side": "A"
           },
           {
-            "sessionId": "prod-hades-worker-97b5576-jfmhf/hds-8g5k1ife4fs1",
-            "sandboxUrl": "https://hds-8g5k1ife4fs1-8080-5ldi2.vbrowser.hades-www.grok-sandbox.com",
+            "sessionId": "worker-example/session-example",
+            "sandboxUrl": "https://sandbox.example.com",
             "portUrls": {
-              "6080": "https://hds-8g5k1ife4fs1-6080-j6282.vbrowser.hades-www.grok-sandbox.com",
-              "8080": "https://hds-8g5k1ife4fs1-8080-5ldi2.vbrowser.hades-www.grok-sandbox.com",
-              "47113": "https://hds-8g5k1ife4fs1-47113-skctb.vbrowser.hades-www.grok-sandbox.com",
-              "50051": "https://hds-8g5k1ife4fs1-50051-xo9xk.vbrowser.hades-www.grok-sandbox.com"
+              "6080": "https://sandbox.example.com",
+              "8080": "https://sandbox.example.com",
+              "47113": "https://sandbox.example.com",
+              "50051": "https://sandbox.example.com"
             },
             "workdir": "/testbed/transformers",
-            "image": "us-docker.pkg.dev/xai-dev-research-code/swe/swearena/starfleet-coding-question:e85437403995-dbu-260409001219-amd64",
+            "image": "registry.example.com/image:latest",
             "createdAt": "2026-06-03T17:30:46.595Z",
             "status": "running",
             "side": "B"
           },
           {
-            "sessionId": "prod-hades-worker-97b5576-6k2z2/hds-d2uv001gw462",
-            "sandboxUrl": "https://hds-d2uv001gw462-8080-dkqug.vbrowser.hades-www.grok-sandbox.com",
+            "sessionId": "worker-example/session-example",
+            "sandboxUrl": "https://sandbox.example.com",
             "portUrls": {
-              "6080": "https://hds-d2uv001gw462-6080-z64i9.vbrowser.hades-www.grok-sandbox.com",
-              "8080": "https://hds-d2uv001gw462-8080-dkqug.vbrowser.hades-www.grok-sandbox.com",
-              "47113": "https://hds-d2uv001gw462-47113-fowoo.vbrowser.hades-www.grok-sandbox.com",
-              "50051": "https://hds-d2uv001gw462-50051-jdr6j.vbrowser.hades-www.grok-sandbox.com"
+              "6080": "https://sandbox.example.com",
+              "8080": "https://sandbox.example.com",
+              "47113": "https://sandbox.example.com",
+              "50051": "https://sandbox.example.com"
             },
             "workdir": "/testbed/transformers",
-            "image": "us-docker.pkg.dev/xai-dev-research-code/swe/swearena/starfleet-coding-question:e85437403995-dbu-260409001219-amd64",
+            "image": "registry.example.com/image:latest",
             "createdAt": "2026-06-03T17:32:34.573Z",
             "status": "running",
             "side": "C"
           }
         ],
-        "hadesSessionId": "prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz",
+        "hadesSessionId": "worker-example/session-example",
         "rollouts": {
           "A": {
-            "traceRef": "coding-question/prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz/trace.json"
+            "traceRef": "trace/example-ref"
           },
           "B": {
-            "traceRef": "coding-question/prod-hades-worker-97b5576-jfmhf/hds-8g5k1ife4fs1/trace.json"
+            "traceRef": "trace/example-ref"
           },
           "C": {
-            "traceRef": "coding-question/prod-hades-worker-97b5576-6k2z2/hds-d2uv001gw462/trace.json"
+            "traceRef": "trace/example-ref"
           }
         },
         "rolloutA": {
-          "traceRef": "coding-question/prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz/trace.json"
+          "traceRef": "trace/example-ref"
         },
         "rollout": {
-          "traceRef": "coding-question/prod-hades-worker-97b5576-wzn44/hds-a5fdvxj1nxcz/trace.json"
+          "traceRef": "trace/example-ref"
         },
         "rolloutB": {
-          "traceRef": "coding-question/prod-hades-worker-97b5576-jfmhf/hds-8g5k1ife4fs1/trace.json"
+          "traceRef": "trace/example-ref"
         }
       },
       "preference_ranking": {
@@ -426,9 +426,9 @@
         "_sf_rich": true,
         "value": "high"
       },
-      "userId": "108714700931150041815",
-      "email": "asaifee@ext.teachx.ai",
-      "workstreamId": "m6HKTE7C4qwhcpghC1iy1",
+      "userId": "user-002",
+      "email": "user1@example.com",
+      "workstreamId": "ws-EXAMPLE",
       "isConsensus": false,
       "startTime": 1781053784991,
       "leadTime": 204686,
@@ -446,14 +446,14 @@
         }
       },
       "reviewLevel": 1,
-      "targetTaskEventId": "te-hENKgstACdncpvmlENdUk",
+      "targetTaskEventId": "ta-1ec45ebc766d",
       "feedback": {
         "entries": [
           {
             "reviewLevel": 1,
             "message": "Thanks for your work on this task!\n\nYou've provided a clear summary of the most important aspects of the prompt by highlighting code correctness, model loading and inference, and test cases passing. \n\nYour justification for picking Model C as the best checks out due to its narrowly scoped changes only in `modeling_utils.py` and the clean ordered step breakdown & strong relevant test verification. There are sufficiently detailed examples showing the weaknesses of Model A & B as well makes the overall ranking clear. \n \nKeep up the good work!",
             "score": 7,
-            "email": "asaifee@ext.teachx.ai",
+            "email": "user1@example.com",
             "timestamp": 1781053990265,
             "sbq": false
           }
@@ -467,14 +467,14 @@
         "reviewLevel": 1,
         "message": "Thanks for your work on this task!\n\nYou've provided a clear summary of the most important aspects of the prompt by highlighting code correctness, model loading and inference, and test cases passing. \n\nYour justification for picking Model C as the best checks out due to its narrowly scoped changes only in `modeling_utils.py` and the clean ordered step breakdown & strong relevant test verification. There are sufficiently detailed examples showing the weaknesses of Model A & B as well makes the overall ranking clear. \n \nKeep up the good work!",
         "score": 7,
-        "email": "asaifee@ext.teachx.ai",
+        "email": "user1@example.com",
         "timestamp": 1781053990265,
         "sbq": false
       }
     ]
   },
   "content": {
-    "taskId": "t-D2F1God7q8QRa48qVJpO1",
+    "taskId": "t-EXAMPLE001",
     "content": {
       "type": "labeling",
       "items": [
@@ -519,7 +519,7 @@
               },
               "dockerImage": {
                 "url": "",
-                "snapshotGcsPath": "gs://hades-starfleet/snapshots/caygar/20260531_194437/hds-y1n8iiqc4lp6/sha256-a13973a8923ea2a1e6d5120323d1a06081031207d26bb310be36d7743fb398a4.tar.gz"
+                "snapshotGcsPath": "gs://example-bucket/snapshot.tar.gz"
               }
             },
             {
@@ -535,7 +535,7 @@
               },
               "dockerImage": {
                 "url": "",
-                "snapshotGcsPath": "gs://hades-starfleet/snapshots/caygar/20260521_011905/hds-buiynn1m6a9h/sha256-b02cc347846ae3846f4594aa64c6d5d951fcf4f045e4e3b4de45c1570c9faffe.tar.gz"
+                "snapshotGcsPath": "gs://example-bucket/snapshot.tar.gz"
               }
             },
             {
@@ -551,7 +551,7 @@
               },
               "dockerImage": {
                 "url": "",
-                "snapshotGcsPath": "gs://hades-starfleet/snapshots/caygar/20260601_233518/hds-ort8qzgxmzzp/sha256-f2998399ff8e5494c6b172626cefe43715ee0444743ad86c08cc84e9d8a28568.tar.gz"
+                "snapshotGcsPath": "gs://example-bucket/snapshot.tar.gz"
               }
             }
           ]
@@ -559,19 +559,19 @@
       ]
     },
     "metadata": {
-      "instance_id": "t-FoKzmMhFfQsxB29AVz4lq",
+      "instance_id": "t-INSTANCE001",
       "models": [
-        "cursor_3p4m",
-        "gpt-5-5-minimal",
-        "build-0524a-3p4m"
+        "model-a",
+        "model-b",
+        "model-c"
       ],
       "label_map": {
-        "A": "cursor_3p4m",
-        "B": "gpt-5-5-minimal",
-        "C": "build-0524a-3p4m"
+        "A": "model-a",
+        "B": "model-b",
+        "C": "model-c"
       },
-      "batch": "v7.3-jun-2-sxs-replay-emu-build0524a-3p4m-anchor",
-      "dataset": "rollout_ready_v10_cleaned",
+      "batch": "example-batch",
+      "dataset": "example-dataset",
       "repo": "transformers",
       "language": "Python",
       "domain": "data_science_ml"
@@ -588,9 +588,9 @@
           "hideSandboxFieldsFromTutors": true,
           "preseeded": true,
           "containerSnapshots": [
-            "gs://hades-starfleet/snapshots/caygar/20260531_194437/hds-y1n8iiqc4lp6/sha256-a13973a8923ea2a1e6d5120323d1a06081031207d26bb310be36d7743fb398a4.tar.gz",
-            "gs://hades-starfleet/snapshots/caygar/20260521_011905/hds-buiynn1m6a9h/sha256-b02cc347846ae3846f4594aa64c6d5d951fcf4f045e4e3b4de45c1570c9faffe.tar.gz",
-            "gs://hades-starfleet/snapshots/caygar/20260601_233518/hds-ort8qzgxmzzp/sha256-f2998399ff8e5494c6b172626cefe43715ee0444743ad86c08cc84e9d8a28568.tar.gz"
+            "gs://example-bucket/snapshot.tar.gz",
+            "gs://example-bucket/snapshot.tar.gz",
+            "gs://example-bucket/snapshot.tar.gz"
           ]
         }
       },

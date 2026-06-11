@@ -41,11 +41,11 @@ DiffDisplay { height: auto; max-height: 50; }
 .trace-t9, .trace-t9 > CollapsibleTitle { color: #af8700; }
 
 /* Fixed info bar */
-#info-bar   { dock: top; height: auto; max-height: 50%; background: $surface; }
+#info-bar   { dock: top; height: 20%; background: $surface; }
 #task-bar   { height: auto; padding: 0 1; color: $accent; background: $panel; }
 #scoreboard { height: auto; padding: 0 1; color: $text; background: $panel; }
 #repo-bar   { height: auto; padding: 0 1; color: $text-muted; }
-#prompt-bar { height: auto; max-height: 12; margin: 0; border: none; }
+#prompt-bar { height: 1fr; margin: 0; border: none; }
 #prompt-bar.-collapsed { border: none; }
 
 /* Overview tabs */
@@ -59,9 +59,6 @@ DiffDisplay { height: auto; max-height: 50; }
 YankCommentModal    { align: center middle; background: $background 60%; }
 #yank-comment-modal { width: 80%; height: auto; max-height: 60%; border: tall $primary; background: $panel; padding: 1 2; }
 #yank-preview       { height: auto; max-height: 12; margin: 0 0 1 0; }
-#yank-sentiment     { height: auto; margin: 0 0 1 0; }
-#yank-sentiment Button { min-width: 6; margin: 0 1 0 0; }
-#yank-sentiment Button.selected { text-style: bold reverse; }
 #yank-comment       { dock: bottom; margin: 1 0 0 0; }
 
 /* Diff search modal */

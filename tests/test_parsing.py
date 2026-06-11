@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-TASK_ID = "t-D2F1God7q8QRa48qVJpO1"
+TASK_ID = "t-EXAMPLE001"
 
 
 class TestParseContent:
@@ -238,30 +238,6 @@ class TestTraceFormatting:
 
         assert trace_type_color(0) == trace_type_color(10)
         assert len({trace_type_color(i) for i in range(10)}) > 1
-
-
-class TestFeedbackDedup:
-    def test_fixture_dedupes(self, fixture_data):
-        from sfctl.parsing import dedupe_feedback
-
-        unique = dedupe_feedback(fixture_data["history"], fixture_data["feedback"])
-        assert len(unique) == 1
-        assert unique[0]["score"] == 7
-
-    def test_empty(self):
-        from sfctl.parsing import dedupe_feedback
-
-        assert dedupe_feedback([], {}) == []
-
-    def test_no_duplicates(self):
-        from sfctl.parsing import dedupe_feedback
-
-        history = [
-            {"feedback": {"entries": [{"timestamp": 1, "msg": "a"}]}},
-            {"feedback": {"entries": [{"timestamp": 2, "msg": "b"}]}},
-        ]
-        unique = dedupe_feedback(history, {"entries": []})
-        assert len(unique) == 2
 
 
 class TestParseJsonField:

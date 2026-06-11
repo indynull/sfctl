@@ -7,18 +7,14 @@ from typing import NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 class BaseConfig(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True, str_strip_whitespace=True)
-
 
 class RankingItem(BaseConfig):
     id: str | None = None
 
-
 class ValueWrapper(BaseConfig):
     value: list[RankingItem] | str | None = None
-
 
 class ActionHistoryItem(BaseConfig):
     type: str | None = None
@@ -28,13 +24,11 @@ class ActionHistoryItem(BaseConfig):
     userId: str | None = None
     passQA: bool | None = None
 
-
 class TaskResponse(BaseConfig):
     taskId: str | None = None
     status: str | None = None
     reviewLevel: float | None = None
     actionHistory: list[ActionHistoryItem] = Field(default_factory=list)
-
 
 class FeedbackEntry(BaseConfig):
     reviewLevel: float | None = None
@@ -43,10 +37,8 @@ class FeedbackEntry(BaseConfig):
     message: str | None = None
     score: int | None = None
 
-
 class FeedbackResponse(BaseConfig):
     entries: list[FeedbackEntry] = Field(default_factory=list)
-
 
 class HistoryEntry(BaseConfig):
     justification: ValueWrapper | None = None
@@ -58,7 +50,6 @@ class HistoryEntry(BaseConfig):
     reviewLevel: float | None = None
     feedback: FeedbackResponse | None = None
 
-
 class ContentItem(BaseConfig):
     type: str | None = None
     title: str | None = None
@@ -66,16 +57,12 @@ class ContentItem(BaseConfig):
     content: str | None = None
     items: list[dict] = Field(default_factory=list)
 
-
 class ContentData(BaseConfig):
     items: list[ContentItem] = Field(default_factory=list)
-
 
 class ContentResponse(BaseConfig):
     content: ContentData | None = None
     taskId: str | None = None
-
-
 
 @dataclass(slots=True)
 class FileDiff:
@@ -83,7 +70,6 @@ class FileDiff:
 
     filename: str
     diff: str
-
 
 @dataclass(slots=True)
 class ModelData:
@@ -96,7 +82,6 @@ class ModelData:
     tool_events: list
     file_diffs: list[FileDiff] = field(default_factory=list)
 
-
 @dataclass(slots=True)
 class ParsedContent:
     """Parsed task content from the API."""
@@ -105,7 +90,6 @@ class ParsedContent:
     repository: str
     current_prompt: str
     models: list[ModelData] = field(default_factory=list)
-
 
 @dataclass(slots=True)
 class Annotation:
@@ -139,7 +123,6 @@ class Annotation:
             sentiment=d.get("sentiment", 0),
         )
 
-
 @dataclass(slots=True)
 class ModelScores:
     """Local voting scores for a single model."""
@@ -164,7 +147,6 @@ class ModelScores:
             response=d.get("response", 0),
             code=d.get("code", 0),
         )
-
 
 class CookieProfile(NamedTuple):
     """A discovered browser cookie profile."""

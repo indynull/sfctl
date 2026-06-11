@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "task_sample.json"
-TASK_ID = "t-D2F1God7q8QRa48qVJpO1"
+TASK_ID = "t-EXAMPLE001"
 
 
 class TestExtractTaskId:

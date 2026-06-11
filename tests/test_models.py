@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-TASK_ID = "t-D2F1God7q8QRa48qVJpO1"
+TASK_ID = "t-EXAMPLE001"
 
 
 class TestTaskResponse:
@@ -28,7 +28,7 @@ class TestTaskResponse:
         assert ah0.type == "transition"
         assert ah0.fromLevel == 0
         assert ah0.toLevel == 1
-        assert ah0.userId == "athaninayagam@teachx.ai"
+        assert ah0.userId == "user2@example.com"
         assert ah0.passQA is None
         ah1 = resp.actionHistory[1]
         assert ah1.fromLevel == 1
@@ -70,10 +70,10 @@ class TestHistoryEntry:
         from sfctl.models import HistoryEntry
 
         e0 = HistoryEntry.model_validate(fixture_data["history"][0])
-        assert e0.email == "athaninayagam@teachx.ai"
+        assert e0.email == "user2@example.com"
         assert e0.reviewLevel == 0
         e1 = HistoryEntry.model_validate(fixture_data["history"][1])
-        assert e1.email == "asaifee@ext.teachx.ai"
+        assert e1.email == "user1@example.com"
         assert e1.reviewLevel == 1
 
     def test_feedback_nested(self, fixture_data):
@@ -94,7 +94,7 @@ class TestFeedbackResponse:
         fb = resp.entries[0]
         assert fb.reviewLevel == 1
         assert fb.score == 7
-        assert fb.email == "asaifee@ext.teachx.ai"
+        assert fb.email == "user1@example.com"
         assert fb.timestamp == 1781053990265
         assert "clear summary" in fb.message
 

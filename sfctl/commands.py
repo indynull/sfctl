@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 
-
 class NavigationProvider(Provider):
     """Command palette provider for view navigation and theme switching."""
 

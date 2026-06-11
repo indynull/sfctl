@@ -7,13 +7,13 @@ Review model responses, traces, and code diffs with syntax highlighting and real
 ## Install
 
 ```
-pip install git+ssh://git@github.com/sfctl/sfctl.git
+pip install git+ssh://git@github.com/indynull/sfctl.git
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```
-uv tool install git+ssh://git@github.com/sfctl/sfctl.git
+uv tool install git+ssh://git@github.com/indynull/sfctl.git
 ```
 
 ## Usage
@@ -51,16 +51,16 @@ This is useful for offline development or testing UI changes without auth.
 | Key | Action |
 |---|---|
 | `1` `2` `3` | Switch to model A/B/C |
-| `f` | Overview (review, history, feedback) |
+| `0` | Overview (review, history, feedback) |
 | `tab` / `shift+tab` | Next/previous tab within a view |
+| `e` | Expand/collapse all in current tab |
 | `+` `-` | Vote (context-aware: code on diffs, response on response tab, overall elsewhere) |
-| `y` | Yank selected diff snippet as evidence (with sentiment and comment) |
+| `y` | Yank selected diff snippet into summary |
 | `ctrl+e` | Edit summary |
 | `ctrl+f` | Fuzzy file search in current model |
 | `c` | Copy review to clipboard |
 | `r` | Refresh data from API |
 | `ctrl+r` | Reset local annotations and scores |
-| `ctrl+d` | Toggle hidden details (emails) |
 | `?` | Help |
 | `q` | Quit |
 
@@ -75,11 +75,11 @@ sfctl/
   cli.py          CLI entry point, --fixture / --set / --clear-config / --dump
   commands.py     command palette provider
   config.py       platformdirs-based config/data persistence
-  ids.py          widget IDs, CSS classes, enums (Context, TaskType)
+  ids.py          widget IDs, CSS classes, enums (Context)
   models.py       Pydantic models (API) + dataclasses (app state)
   parsing.py      content parsing, diff extraction, trace formatting
   ranking.py      pure ranking computation and model identification
-  scoring.py      annotation persistence and markdown rendering
+  scoring.py      annotation persistence and legacy migration
   screens.py      modal screens (yank, file search, help)
   task_types.py   task type detection from API data
   widgets.py      DiffDisplay (syntax highlighting), LazyCollapsible, trace widgets

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from threading import Thread
 
@@ -14,23 +15,11 @@ from textual.widgets import Collapsible, Static, TextArea
 
 from sfctl.constants import ARROW_DOWN, ARROW_RIGHT, ARROW_UP
 from sfctl.ids import Context
-from sfctl.parsing import build_diff_line_map
+from sfctl.parsing import _sanitize, build_diff_line_map
 
 _STYLE_HUNK = Style(color="cyan", bold=True)
 _STYLE_INSERTED = Style(color="green")
 _STYLE_DELETED = Style(color="red")
-
-
-def _sanitize(text: str, max_len: int = 200) -> str:
-    """Strip newlines, brackets, and truncate for safe use in Rich markup."""
-    return (
-        text.replace("\n", " ")
-        .replace("\r", "")
-        .replace("[", "(")
-        .replace("]", ")")[:max_len]
-        .strip()
-    )
-
 
 def _build_line_styles(text: str) -> list[Style]:
     """Compute a style for each line of a unified diff based on its prefix."""
@@ -45,7 +34,6 @@ def _build_line_styles(text: str) -> list[Style]:
         else:
             styles.append(Style.null())
     return styles
-
 
 class DiffDisplay(TextArea):
     """Read-only TextArea for diffs with syntax highlighting and text selection."""
@@ -64,8 +52,6 @@ class DiffDisplay(TextArea):
         Binding("y", "yank", "Yank", show=True),
     ]
 
-    COMPONENT_CLASSES = TextArea.COMPONENT_CLASSES | {"diff-gutter"}
-
     def action_vote_up(self) -> None:
         self.post_message(self.VoteRequested(1))
 
@@ -76,7 +62,7 @@ class DiffDisplay(TextArea):
         self.post_message(self.YankRequested())
 
     def __init__(self, text: str, model_name: str, filename: str, **kwargs):
-        super().__init__(text, read_only=True, show_line_numbers=True, **kwargs)
+        super().__init__(text, read_only=True, show_line_numbers=True, soft_wrap=False, **kwargs)
         self.diff_text = text
         self.model_name = model_name
         self.filename = filename
@@ -134,7 +120,6 @@ class DiffDisplay(TextArea):
                 strip = Strip(new_segments, strip.cell_length)
         return strip
 
-
 @dataclass
 class _LazyPayload:
     """Metadata for lazy-loaded content in a Collapsible."""
@@ -144,7 +129,6 @@ class _LazyPayload:
     letter: str = ""
     filename: str = ""
     events: list = field(default_factory=list)
-
 
 class LazyCollapsible(Collapsible):
     """A Collapsible that carries lazy-load metadata without ad-hoc attributes."""
@@ -170,7 +154,6 @@ class LazyCollapsible(Collapsible):
             lazy=_LazyPayload(events=events),
             **kwargs,
         )
-
 
 def _format_value(v: object, max_len: int = 120) -> str:
     """Format a single value for display, truncating long strings."""
@@ -199,20 +182,16 @@ def _format_value(v: object, max_len: int = 120) -> str:
         return f"[dim]{items}{suffix}[/]"
     return f"[dim]{_sanitize(str(v), max_len)}[/]"
 
-
 def _try_parse(v: object) -> object:
     """If v is a JSON string, parse it into a dict/list."""
     if isinstance(v, str):
         try:
-            import json
-
             parsed = json.loads(v)
             if isinstance(parsed, (dict, list)):
                 return parsed
         except (json.JSONDecodeError, ValueError):
             pass
     return v
-
 
 def trace_event_detail_widgets(ev: dict) -> list[Static]:
     """Build detail widgets for a trace event's args and response/output."""
