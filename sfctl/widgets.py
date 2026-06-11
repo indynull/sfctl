@@ -5,27 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from threading import Thread
 
-from pygments.lexers import DiffLexer
-from pygments.token import Token
 from rich.segment import Segment
 from rich.style import Style
+from textual.binding import Binding
+from textual.message import Message
 from textual.strip import Strip
 from textual.widgets import Collapsible, Static, TextArea
 
-from sfctl.constants import ARROW_RIGHT
+from sfctl.constants import ARROW_DOWN, ARROW_RIGHT, ARROW_UP
+from sfctl.ids import Context
 from sfctl.parsing import build_diff_line_map
 
-_TOKEN_STYLES: dict[object, Style] = {
-    Token.Generic.Heading: Style(color="bright_yellow", bold=True),
-    Token.Generic.Subheading: Style(color="cyan", bold=True),
-    Token.Generic.Inserted: Style(color="green"),
-    Token.Generic.Deleted: Style(color="red"),
-    Token.Generic.Strong: Style(bold=True),
-    Token.Generic.Emph: Style(italic=True),
-    Token.Generic.Output: Style(dim=True),
-}
-
-_DIFF_LEXER = DiffLexer()
+_STYLE_HUNK = Style(color="cyan", bold=True)
+_STYLE_INSERTED = Style(color="green")
+_STYLE_DELETED = Style(color="red")
 
 
 def _sanitize(text: str, max_len: int = 200) -> str:
@@ -40,39 +33,47 @@ def _sanitize(text: str, max_len: int = 200) -> str:
 
 
 def _build_line_styles(text: str) -> list[Style]:
-    """Pre-compute a Pygments-based style for each line of a diff."""
-    lines = text.split("\n")
-    styles: list[Style] = [Style.null()] * len(lines)
-
-    line_idx = 0
-    col = 0
-    for ttype, value in _DIFF_LEXER.get_tokens(text):
-        # Walk up the token hierarchy to find a matching style
-        style = Style.null()
-        t = ttype
-        while t is not Token:
-            if t in _TOKEN_STYLES:
-                style = _TOKEN_STYLES[t]
-                break
-            t = t.parent
-
-        # Assign style to every line this token spans
-        parts = value.split("\n")
-        for i, part in enumerate(parts):
-            if i > 0:
-                line_idx += 1
-                col = 0
-            if line_idx < len(styles) and style != Style.null():
-                styles[line_idx] = style
-            col += len(part)
-
+    """Compute a style for each line of a unified diff based on its prefix."""
+    styles: list[Style] = []
+    for line in text.split("\n"):
+        if line.startswith("@@"):
+            styles.append(_STYLE_HUNK)
+        elif line.startswith("+"):
+            styles.append(_STYLE_INSERTED)
+        elif line.startswith("-"):
+            styles.append(_STYLE_DELETED)
+        else:
+            styles.append(Style.null())
     return styles
 
 
 class DiffDisplay(TextArea):
-    """Read-only TextArea for diffs with Pygments syntax highlighting and text selection."""
+    """Read-only TextArea for diffs with syntax highlighting and text selection."""
+
+    class VoteRequested(Message):
+        def __init__(self, delta: int) -> None:
+            super().__init__()
+            self.delta = delta
+
+    class YankRequested(Message):
+        pass
+
+    BINDINGS = [
+        Binding("+", "vote_up", f"{ARROW_UP} Code", show=True),
+        Binding("-", "vote_down", f"{ARROW_DOWN} Code", show=True),
+        Binding("y", "yank", "Yank", show=True),
+    ]
 
     COMPONENT_CLASSES = TextArea.COMPONENT_CLASSES | {"diff-gutter"}
+
+    def action_vote_up(self) -> None:
+        self.post_message(self.VoteRequested(1))
+
+    def action_vote_down(self) -> None:
+        self.post_message(self.VoteRequested(-1))
+
+    def action_yank(self) -> None:
+        self.post_message(self.YankRequested())
 
     def __init__(self, text: str, model_name: str, filename: str, **kwargs):
         super().__init__(text, read_only=True, show_line_numbers=True, **kwargs)

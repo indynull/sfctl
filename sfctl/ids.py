@@ -26,7 +26,11 @@ JUST_RANKINGS = "just-rankings"
 
 YANK_MODAL = "yank-comment-modal"
 YANK_PREVIEW = "yank-preview"
+YANK_SENTIMENT = "yank-sentiment"
 YANK_COMMENT = "yank-comment"
+YANK_POS = "yank-pos"
+YANK_NEU = "yank-neu"
+YANK_NEG = "yank-neg"
 
 DIFF_SEARCH_MODAL = "diff-search-modal"
 DIFF_SEARCH_INPUT = "diff-search-input"

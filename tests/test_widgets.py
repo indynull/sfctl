@@ -36,6 +36,20 @@ class TestBuildLineStyles:
         styles = _build_line_styles("")
         assert isinstance(styles, list)
 
+    def test_styles_match_line_prefixes(self):
+        from rich.style import Style
+
+        from sfctl.widgets import _STYLE_DELETED, _STYLE_HUNK, _STYLE_INSERTED, _build_line_styles
+
+        diff = "@@ -1,3 +1,4 @@\n context1\n+added\n context2\n-deleted"
+        styles = _build_line_styles(diff)
+        assert len(styles) == 5
+        assert styles[0] == _STYLE_HUNK
+        assert styles[1] == Style.null()
+        assert styles[2] == _STYLE_INSERTED
+        assert styles[3] == Style.null()
+        assert styles[4] == _STYLE_DELETED
+
 
 class TestFormatValue:
     def test_none(self):

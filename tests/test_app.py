@@ -869,7 +869,7 @@ class TestMiscActions:
             import sfctl.screens as screens_mod
 
             orig = screens_mod.build_clipboard_text
-            screens_mod.build_clipboard_text = lambda a: "   "
+            screens_mod.build_clipboard_text = lambda *a, **kw: "   "
             try:
                 app.action_copy_summary()
                 await pilot.pause()
@@ -1004,7 +1004,10 @@ class TestBuildClipboardText:
         from sfctl.screens import build_clipboard_text
 
         app = StarfleetApp(TASK_ID, fixture_data)
-        text = build_clipboard_text(app)
+        text = build_clipboard_text(
+            app.task_id, app.rankings_summary(),
+            app.annotations, app.summary_text,
+        )
         assert TASK_ID in text
 
 

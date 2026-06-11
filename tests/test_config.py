@@ -25,9 +25,9 @@ class TestConfig:
         assert loaded["cookie_file"] == "/tmp/cookies"
 
     def test_empty_default(self):
-        # autouse fixture already isolates config_dir
         from sfctl import config
 
+        config.save_config({})
         assert config.load_config() == {}
 
     def test_api_base_default(self):

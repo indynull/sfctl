@@ -29,16 +29,16 @@ DiffDisplay { height: auto; max-height: 50; }
 .trace-summary-row { height: 1; padding: 0 1; margin: 0; }
 .trace-event       { margin: 0; padding: 0 1; height: 1; }
 .trace-event-c     { margin: 0; padding: 0; }
-.trace-t0, .trace-t0 > CollapsibleTitle { color: $primary; }
-.trace-t1, .trace-t1 > CollapsibleTitle { color: $secondary; }
-.trace-t2, .trace-t2 > CollapsibleTitle { color: $accent; }
-.trace-t3, .trace-t3 > CollapsibleTitle { color: $warning; }
-.trace-t4, .trace-t4 > CollapsibleTitle { color: $error; }
-.trace-t5, .trace-t5 > CollapsibleTitle { color: $success; }
-.trace-t6, .trace-t6 > CollapsibleTitle { color: $primary-darken-1; }
-.trace-t7, .trace-t7 > CollapsibleTitle { color: $secondary-darken-1; }
-.trace-t8, .trace-t8 > CollapsibleTitle { color: $accent-darken-1; }
-.trace-t9, .trace-t9 > CollapsibleTitle { color: $warning-darken-1; }
+.trace-t0, .trace-t0 > CollapsibleTitle { color: #5f87ff; }
+.trace-t1, .trace-t1 > CollapsibleTitle { color: #d75fd7; }
+.trace-t2, .trace-t2 > CollapsibleTitle { color: #5fd7d7; }
+.trace-t3, .trace-t3 > CollapsibleTitle { color: #d7af5f; }
+.trace-t4, .trace-t4 > CollapsibleTitle { color: #d75f5f; }
+.trace-t5, .trace-t5 > CollapsibleTitle { color: #5fd75f; }
+.trace-t6, .trace-t6 > CollapsibleTitle { color: #5f87af; }
+.trace-t7, .trace-t7 > CollapsibleTitle { color: #875f87; }
+.trace-t8, .trace-t8 > CollapsibleTitle { color: #00af87; }
+.trace-t9, .trace-t9 > CollapsibleTitle { color: #af8700; }
 
 /* Fixed info bar */
 #info-bar   { dock: top; height: auto; max-height: 50%; background: $surface; }
@@ -68,3 +68,7 @@ YankCommentModal    { align: center middle; background: $background 60%; }
 DiffSearchModal    { align: center top; background: $background 60%; }
 #diff-search-modal { width: 60%; height: auto; max-height: 40%; border: tall $primary; background: $panel; padding: 1 2; margin: 2 0 0 0; }
 #diff-search-list  { height: auto; max-height: 16; margin: 1 0 0 0; }
+
+/* Help modal */
+HelpModal    { align: center middle; background: $background 60%; }
+#help-modal  { width: 70%; height: auto; max-height: 70%; border: tall $primary; background: $panel; padding: 1 2; }

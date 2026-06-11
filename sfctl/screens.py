@@ -7,18 +7,23 @@ from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.fuzzy import Matcher
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, OptionList, TextArea
+from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
+
+from sfctl import ids
+from sfctl.ids import Context
 
 if TYPE_CHECKING:
-    from sfctl.app import StarfleetApp
-    from sfctl.models import FileDiff
+    from sfctl.models import Annotation, FileDiff
 
 
-class YankCommentModal(ModalScreen):
-    """Modal to yank a snippet as a structured annotation with sentiment."""
+class YankCommentModal(ModalScreen[tuple[int, "Annotation"] | None]):
+    """Modal to yank a snippet as a structured annotation with sentiment.
+
+    Dismisses with (model_index, Annotation) on submit, None on cancel.
+    """
 
     BINDINGS = [
         Binding("escape", "dismiss", "Cancel"),
@@ -31,7 +36,6 @@ class YankCommentModal(ModalScreen):
         filename: str,
         snippet: str,
         line_ref: str,
-        starfleet_app: StarfleetApp,
     ):
         super().__init__()
         self.model_index = model_index
@@ -39,11 +43,10 @@ class YankCommentModal(ModalScreen):
         self.filename = filename
         self.snippet = snippet
         self.line_ref = line_ref
-        self.starfleet_app = starfleet_app
         self._sentiment = 0
 
     def compose(self) -> ComposeResult:
-        with Container(id="yank-comment-modal"):
+        with Container(id=ids.YANK_MODAL):
             yield Label(
                 f"{self.filename}:{self.line_ref}  (enter to yank, esc to cancel)",
                 classes="section-title",
@@ -52,30 +55,29 @@ class YankCommentModal(ModalScreen):
                 self.snippet,
                 read_only=True,
                 show_line_numbers=False,
-                id="yank-preview",
+                id=ids.YANK_PREVIEW,
             )
-            with Horizontal(id="yank-sentiment"):
-                yield Button("+1", id="yank-pos", variant="success")
-                yield Button("0", id="yank-neu", variant="default", classes="selected")
-                yield Button("-1", id="yank-neg", variant="error")
-            yield Input(placeholder="optional comment", id="yank-comment")
+            with Horizontal(id=ids.YANK_SENTIMENT):
+                yield Button("+1", id=ids.YANK_POS, variant="success")
+                yield Button("0", id=ids.YANK_NEU, variant="default", classes="selected")
+                yield Button("-1", id=ids.YANK_NEG, variant="error")
+            yield Input(placeholder="optional comment", id=ids.YANK_COMMENT)
 
     def on_mount(self) -> None:
-        self.query_one("#yank-comment", Input).focus()
+        self.query_one(f"#{ids.YANK_COMMENT}", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id
-        if btn_id == "yank-pos":
+        if btn_id == ids.YANK_POS:
             self._sentiment = 1
-        elif btn_id == "yank-neg":
+        elif btn_id == ids.YANK_NEG:
             self._sentiment = -1
         else:
             self._sentiment = 0
-        # Visual feedback: mark selected
-        for b in self.query("#yank-sentiment Button"):
+        for b in self.query(f"#{ids.YANK_SENTIMENT} Button"):
             b.remove_class("selected")
         event.button.add_class("selected")
-        self.query_one("#yank-comment", Input).focus()
+        self.query_one(f"#{ids.YANK_COMMENT}", Input).focus()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         from sfctl.models import Annotation
@@ -86,38 +88,38 @@ class YankCommentModal(ModalScreen):
             line_ref=self.line_ref,
             snippet=self.snippet,
             comment=comment,
-            context="code",
+            context=Context.CODE,
             sentiment=self._sentiment,
         )
-        self.starfleet_app.add_annotation(self.model_index, annotation)
-        self.starfleet_app.notify(f"Yanked snippet from {self.filename}")
-        self.dismiss()
+        self.dismiss((self.model_index, annotation))
 
 
-class DiffSearchModal(ModalScreen):
-    """Scoped file search for the current model's diffs."""
+class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
+    """Scoped file search for the current model's diffs.
+
+    Dismisses with (model_index, filename) on selection, None on cancel.
+    """
 
     BINDINGS = [
         Binding("escape", "dismiss", "Cancel"),
     ]
 
-    def __init__(self, model_index: int, file_diffs: list[FileDiff], starfleet_app: StarfleetApp):
+    def __init__(self, model_index: int, file_diffs: list[FileDiff]):
         super().__init__()
         self.model_index = model_index
         self.file_diffs = file_diffs
-        self.starfleet_app = starfleet_app
 
     def compose(self) -> ComposeResult:
-        with Container(id="diff-search-modal"):
-            yield Input(placeholder="search files...", id="diff-search-input")
-            yield OptionList(*[fd.filename for fd in self.file_diffs], id="diff-search-list")
+        with Container(id=ids.DIFF_SEARCH_MODAL):
+            yield Input(placeholder="search files...", id=ids.DIFF_SEARCH_INPUT)
+            yield OptionList(*[fd.filename for fd in self.file_diffs], id=ids.DIFF_SEARCH_LIST)
 
     def on_mount(self) -> None:
-        self.query_one("#diff-search-input", Input).focus()
+        self.query_one(f"#{ids.DIFF_SEARCH_INPUT}", Input).focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         query = event.value.strip()
-        option_list = self.query_one("#diff-search-list", OptionList)
+        option_list = self.query_one(f"#{ids.DIFF_SEARCH_LIST}", OptionList)
         option_list.clear_options()
         if not query:
             for fd in self.file_diffs:
@@ -135,16 +137,33 @@ class DiffSearchModal(ModalScreen):
             option_list.highlighted = 0
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        option_list = self.query_one("#diff-search-list", OptionList)
+        option_list = self.query_one(f"#{ids.DIFF_SEARCH_LIST}", OptionList)
         if option_list.option_count > 0 and option_list.highlighted is not None:
             filename = str(option_list.get_option_at_index(option_list.highlighted).prompt)
-            await self.starfleet_app.go_to_diff(self.model_index, filename)
-            self.dismiss()
+            self.dismiss((self.model_index, filename))
 
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         filename = str(event.option.prompt)
-        await self.starfleet_app.go_to_diff(self.model_index, filename)
-        self.dismiss()
+        self.dismiss((self.model_index, filename))
+
+
+class HelpModal(ModalScreen):
+    """Scrollable modal for help text or tutorial content."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+    ]
+
+    def __init__(self, content: str, title: str = "Help"):
+        super().__init__()
+        self._content = content
+        self._title = title
+
+    def compose(self) -> ComposeResult:
+        with Container(id="help-modal"):
+            yield Label(self._title, classes="section-title")
+            with ScrollableContainer():
+                yield Static(self._content)
 
 
 def _strip_markup(text: str) -> str:
@@ -152,15 +171,20 @@ def _strip_markup(text: str) -> str:
     return re.sub(r"\[/?[a-z_ #0-9-]*\]", "", text)
 
 
-def build_clipboard_text(app: StarfleetApp) -> str:
+def build_clipboard_text(
+    task_id: str,
+    rankings_summary: str,
+    annotations: list,
+    summary_text: str,
+) -> str:
     """Build plain-text summary of rankings and annotations for clipboard."""
     from sfctl.scoring import render_annotations_md
 
-    parts = [f"Task: {app.task_id}"]
-    rankings = _strip_markup(app.rankings_summary())
+    parts = [f"Task: {task_id}"]
+    rankings = _strip_markup(rankings_summary)
     if rankings:
         parts.append(f"\nRankings: {rankings}")
-    rendered = render_annotations_md(app.annotations, app.summary_text)
+    rendered = render_annotations_md(annotations, summary_text)
     if rendered.strip():
         parts.append(f"\n{rendered}")
     return "\n".join(parts)

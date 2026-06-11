@@ -35,6 +35,7 @@ def isolated_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "user_config_dir", lambda *a, **kw: str(cfg))
     monkeypatch.setattr(config, "user_data_dir", lambda *a, **kw: str(dat))
     monkeypatch.setattr(scoring, "data_dir", lambda: dat)
+    config.update_config(tutorial_seen=True)
 
 
 @pytest.fixture

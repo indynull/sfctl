@@ -13,8 +13,9 @@ TASK_ID = "t-D2F1God7q8QRa48qVJpO1"
 
 class TestCli:
     def test_show_config_empty(self, monkeypatch, capsys):
-        from sfctl import cli
+        from sfctl import cli, config
 
+        config.save_config({})
         monkeypatch.setattr("sys.argv", ["sfctl", "--show-config"])
         cli.main()
         assert "(empty)" in capsys.readouterr().out
