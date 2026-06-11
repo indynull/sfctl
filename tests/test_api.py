@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import types
 from pathlib import Path
 
@@ -360,7 +359,7 @@ class TestLoadCookies:
         fake_bc3 = types.ModuleType("browser_cookie3")
         fake_bc3.chrome = lambda cookie_file=None: FakeJar()
         fake_bc3.firefox = lambda cookie_file=None: FakeJar()
-        monkeypatch.setitem(sys.modules, "browser_cookie3", fake_bc3)
+        monkeypatch.setattr("sfctl.api.browser_cookie3", fake_bc3)
 
     def test_filters_by_domain(self, monkeypatch):
         from sfctl import api as api_mod
@@ -393,12 +392,85 @@ class TestLoadCookies:
 
 
 class TestResolveCookies:
+    def test_env_token(self, monkeypatch):
+        from sfctl import api as api_mod
+
+        monkeypatch.setenv("STARFLEET_ACCESS_TOKEN", "my-secret-token")
+        cookies, is_token = api_mod.resolve_cookies(None)
+        assert cookies == {"accessToken": "my-secret-token"}
+        assert is_token is True
+
+    def test_env_token_verbose(self, monkeypatch, capsys):
+        from sfctl import api as api_mod
+
+        monkeypatch.setenv("STARFLEET_ACCESS_TOKEN", "tok123")
+        cookies, is_token = api_mod.resolve_cookies(None, verbose=True)
+        assert cookies == {"accessToken": "tok123"}
+        assert is_token is True
+        assert "STARFLEET_ACCESS_TOKEN" in capsys.readouterr().out
+
+    def test_env_token_overrides_cli_flag(self, monkeypatch):
+        from sfctl import api as api_mod
+
+        monkeypatch.setenv("STARFLEET_ACCESS_TOKEN", "env-token")
+        monkeypatch.setattr(api_mod, "_load_cookies", lambda fn, cf=None: {"a": "1"})
+        cookies, is_token = api_mod.resolve_cookies("/fake/cookies")
+        assert cookies == {"accessToken": "env-token"}
+        assert is_token is True
+
+    def test_token_arg(self, monkeypatch, tmp_path):
+        from sfctl import api as api_mod
+        from sfctl import config
+
+        monkeypatch.setattr(config, "_config_path", lambda: tmp_path / "config.json")
+        cookies, is_token = api_mod.resolve_cookies(None, token_arg="cli-token")
+        assert cookies == {"accessToken": "cli-token"}
+        assert is_token is True
+
+    def test_token_arg_saved_to_config(self, monkeypatch, tmp_path):
+        from sfctl import api as api_mod
+        from sfctl import config
+
+        cfg_path = tmp_path / "config.json"
+        monkeypatch.setattr(config, "_config_path", lambda: cfg_path)
+        api_mod.resolve_cookies(None, token_arg="saved-tok")
+        assert config.load_config().get("access_token") == "saved-tok"
+
+    def test_token_arg_verbose(self, monkeypatch, capsys, tmp_path):
+        from sfctl import api as api_mod
+        from sfctl import config
+
+        monkeypatch.setattr(config, "_config_path", lambda: tmp_path / "config.json")
+        cookies, is_token = api_mod.resolve_cookies(None, verbose=True, token_arg="v-tok")
+        assert cookies == {"accessToken": "v-tok"}
+        assert is_token is True
+        assert "--token" in capsys.readouterr().out
+
+    def test_env_token_overrides_token_arg(self, monkeypatch):
+        from sfctl import api as api_mod
+
+        monkeypatch.setenv("STARFLEET_ACCESS_TOKEN", "env-wins")
+        cookies, is_token = api_mod.resolve_cookies(None, token_arg="cli-loses")
+        assert cookies == {"accessToken": "env-wins"}
+        assert is_token is True
+
+    def test_saved_token_in_config(self, monkeypatch, tmp_path):
+        from sfctl import api as api_mod
+        from sfctl import config
+
+        monkeypatch.setattr(config, "_config_path", lambda: tmp_path / "config.json")
+        config.save_config({"access_token": "from-config"})
+        cookies, is_token = api_mod.resolve_cookies(None)
+        assert cookies == {"accessToken": "from-config"}
+        assert is_token is True
+
     def test_cli_flag(self, monkeypatch):
         from sfctl import api as api_mod
 
         monkeypatch.setattr(api_mod, "_load_cookies", lambda fn, cf=None: {"a": "1"})
-        result = api_mod.resolve_cookies("/fake/cookies", verbose=True)
-        assert result == {"a": "1"}
+        cookies, is_token = api_mod.resolve_cookies("/fake/cookies", verbose=True)
+        assert cookies == {"a": "1"}
+        assert is_token is False
 
     def test_saved_path(self, tmp_path, monkeypatch):
         from sfctl import api as api_mod
@@ -408,8 +480,9 @@ class TestResolveCookies:
         cookie_path.touch()
         config.save_config({"browser": "firefox", "cookie_file": str(cookie_path)})
         monkeypatch.setattr(api_mod, "_load_cookies", lambda fn, cf=None: {"b": "2"})
-        result = api_mod.resolve_cookies(None, verbose=True)
-        assert result == {"b": "2"}
+        cookies, is_token = api_mod.resolve_cookies(None, verbose=True)
+        assert cookies == {"b": "2"}
+        assert is_token is False
 
     def test_fallback_interactive(self, monkeypatch):
         from sfctl import api as api_mod
@@ -421,8 +494,9 @@ class TestResolveCookies:
             lambda: CookieProfile("/fake", "Chrome", "chrome"),
         )
         monkeypatch.setattr(api_mod, "_load_cookies", lambda fn, cf=None: {"c": "3"})
-        result = api_mod.resolve_cookies(None)
-        assert result == {"c": "3"}
+        cookies, is_token = api_mod.resolve_cookies(None)
+        assert cookies == {"c": "3"}
+        assert is_token is False
 
 
 class TestInteractiveCookieSetup:

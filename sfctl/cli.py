@@ -13,6 +13,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   sfctl t-abc123def
+  sfctl t-abc123def -t mytoken123
   sfctl t-abc123def -c /path/to/Cookies -v
   sfctl --fixture tests/fixtures/task_sample.json
   sfctl --show-config
@@ -25,6 +26,12 @@ def main():
     )
     parser.add_argument(
         "-c", "--cookie-file", default=None, help="Path to browser Cookies file (saved to config)"
+    )
+    parser.add_argument(
+        "-t",
+        "--token",
+        default=None,
+        help="Access token for the Starfleet API (saved to config)",
     )
     parser.add_argument(
         "-f", "--fixture", default=None, help="Load from a JSON fixture file instead of the API"
@@ -107,7 +114,7 @@ def main():
 
     from sfctl.api import AuthError, fetch_data, resolve_cookies
 
-    cookies = resolve_cookies(args.cookie_file, args.verbose)
+    cookies, using_token = resolve_cookies(args.cookie_file, args.verbose, token_arg=args.token)
 
     if args.verbose:
         names = sorted(cookies.keys())
@@ -118,6 +125,8 @@ def main():
         data = fetch_data(args.task, cookies)
     except AuthError as e:
         print(f"\nError: {e}", file=sys.stderr)
+        if using_token:
+            raise SystemExit(1) from None
         answer = (
             input("\nWould you like to pick a different cookie profile? [y/N] ").strip().lower()
         )

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import glob
+import os
 import re
 import sys
 from pathlib import Path
 
+import browser_cookie3
 import httpx
 
 from sfctl.config import HEADERS, _config_path, get_api_base, update_config
@@ -139,7 +142,6 @@ def _chromium_cookie_patterns() -> list[tuple[str, str, list[str]]]:
             ("Vivaldi", "vivaldi", [f"{base}/Vivaldi/*/Cookies"]),
         ]
     elif sys.platform == "win32":
-        import os
 
         local = os.environ.get("LOCALAPPDATA", "")
         return [
@@ -177,8 +179,6 @@ def _firefox_cookie_patterns() -> list[tuple[str, str, list[str]]]:
             ("LibreWolf", "librewolf", [f"{base}/librewolf/Profiles/*/cookies.sqlite"]),
         ]
     elif sys.platform == "win32":
-        import os
-
         appdata = os.environ.get("APPDATA", "")
         return [
             ("Firefox", "firefox", [f"{appdata}\\Mozilla\\Firefox\\Profiles\\*\\cookies.sqlite"]),
@@ -199,9 +199,6 @@ def _firefox_cookie_patterns() -> list[tuple[str, str, list[str]]]:
 
 def find_cookie_profiles() -> list[CookieProfile]:
     """Discover all browser cookie files across all profiles."""
-    import glob
-    import os
-
     all_patterns = _chromium_cookie_patterns() + _firefox_cookie_patterns()
     profiles: list[CookieProfile] = []
     seen: set[str] = set()
@@ -233,7 +230,6 @@ def _domain_matches(cookie_domain: str, host: str) -> bool:
 
 def _load_cookies(func_name: str, cookie_file: str | None = None) -> dict[str, str]:
     """Load cookies and return a dict filtered to the API host domain."""
-    import browser_cookie3
 
     loader = getattr(browser_cookie3, func_name)
     cj = loader(cookie_file=cookie_file) if cookie_file else loader()
@@ -288,8 +284,47 @@ def interactive_cookie_setup() -> CookieProfile:
     return selected
 
 
-def resolve_cookies(cookie_file_arg: str | None, verbose: bool = False) -> dict[str, str]:
-    """Resolve cookies: CLI flag > config > interactive setup. Returns dict for httpx."""
+def _resolve_token(
+    verbose: bool = False,
+    token_arg: str | None = None,
+) -> str | None:
+    """Return an access token from env, CLI arg, or config — or None if unavailable."""
+    token = os.environ.get("STARFLEET_ACCESS_TOKEN")
+    if token:
+        if verbose:
+            print("Using access token from STARFLEET_ACCESS_TOKEN env var")
+        return token
+
+    if token_arg:
+        if verbose:
+            print("Using access token from --token flag")
+        update_config(access_token=token_arg)
+        return token_arg
+
+    from sfctl.config import load_config
+
+    saved_token = load_config().get("access_token")
+    if saved_token:
+        if verbose:
+            print("Using saved access token from config")
+        return saved_token
+
+    return None
+
+
+def resolve_cookies(
+    cookie_file_arg: str | None,
+    verbose: bool = False,
+    token_arg: str | None = None,
+) -> tuple[dict[str, str], bool]:
+    """Resolve auth: token > cookie file > config > interactive setup.
+
+    Returns (cookies_dict, is_token).
+    """
+    token = _resolve_token(verbose=verbose, token_arg=token_arg)
+    if token:
+        return {"accessToken": token}, True
+
     from sfctl.config import load_config
 
     config = load_config()
@@ -299,13 +334,13 @@ def resolve_cookies(cookie_file_arg: str | None, verbose: bool = False) -> dict[
         if verbose:
             print(f"Using cookies from CLI flag: {cookie_file_arg}")
         update_config(cookie_file=cookie_file_arg)
-        return _load_cookies(func_name, cookie_file_arg)
+        return _load_cookies(func_name, cookie_file_arg), False
 
     saved_path = config.get("cookie_file")
     if saved_path and Path(saved_path).exists():
         if verbose:
             print(f"Using saved cookie path: {saved_path}")
-        return _load_cookies(func_name, saved_path)
+        return _load_cookies(func_name, saved_path), False
 
     selected = interactive_cookie_setup()
-    return _load_cookies(selected.func, selected.path)
+    return _load_cookies(selected.func, selected.path), False

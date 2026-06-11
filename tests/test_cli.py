@@ -125,7 +125,7 @@ class TestCli:
         from sfctl.app import StarfleetApp
 
         fixture_data = json.loads(FIXTURE_PATH.read_text())
-        monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False: {"c": "1"})
+        monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False, **kw: ({"c": "1"}, False))
         monkeypatch.setattr(api_mod, "fetch_data", lambda t, c: fixture_data)
         monkeypatch.setattr(StarfleetApp, "run", lambda self: None)
         monkeypatch.setattr("sys.argv", ["sfctl", TASK_ID])
@@ -137,18 +137,37 @@ class TestCli:
         from sfctl.app import StarfleetApp
 
         fixture_data = json.loads(FIXTURE_PATH.read_text())
-        monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False: {"tok": "v"})
+        monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False, **kw: ({"tok": "v"}, False))
         monkeypatch.setattr(api_mod, "fetch_data", lambda t, c: fixture_data)
         monkeypatch.setattr(StarfleetApp, "run", lambda self: None)
         monkeypatch.setattr("sys.argv", ["sfctl", TASK_ID, "-v"])
         cli.main()
         assert "Launching TUI" in capsys.readouterr().out
 
+    def test_token_flag(self, monkeypatch):
+        from sfctl import api as api_mod
+        from sfctl import cli
+        from sfctl.app import StarfleetApp
+
+        fixture_data = json.loads(FIXTURE_PATH.read_text())
+        captured = {}
+
+        def fake_resolve(cf, v=False, token_arg=None):
+            captured["token_arg"] = token_arg
+            return {"accessToken": token_arg}, True
+
+        monkeypatch.setattr(api_mod, "resolve_cookies", fake_resolve)
+        monkeypatch.setattr(api_mod, "fetch_data", lambda t, c: fixture_data)
+        monkeypatch.setattr(StarfleetApp, "run", lambda self: None)
+        monkeypatch.setattr("sys.argv", ["sfctl", TASK_ID, "-t", "my-secret"])
+        cli.main()
+        assert captured["token_arg"] == "my-secret"
+
     def test_auth_error_decline(self, monkeypatch):
         from sfctl import api as api_mod
         from sfctl import cli
 
-        monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False: {})
+        monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False, **kw: ({}, False))
         monkeypatch.setattr(
             api_mod,
             "fetch_data",
@@ -165,7 +184,7 @@ class TestCli:
         from sfctl.app import StarfleetApp
         from sfctl.models import CookieProfile
 
-        monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False: {})
+        monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False, **kw: ({}, False))
         call_count = 0
 
         def fetch_or_fail(t, c):
