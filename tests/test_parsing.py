@@ -51,7 +51,7 @@ class TestParseContent:
 
 class TestExtractFileDiffs:
     def test_split(self):
-        from sftui.parsing import extract_file_diffs
+        from sfctl.parsing import extract_file_diffs
 
         diff = (
             "diff --git a/foo.py b/foo.py\n--- a/foo.py\n+++ b/foo.py\n"
@@ -66,13 +66,13 @@ class TestExtractFileDiffs:
         assert "+new" in files[0].diff
 
     def test_empty(self):
-        from sftui.parsing import extract_file_diffs
+        from sfctl.parsing import extract_file_diffs
 
         assert extract_file_diffs("") == []
         assert extract_file_diffs("   ") == []
 
     def test_short_diff_git_header(self):
-        from sftui.parsing import extract_file_diffs
+        from sfctl.parsing import extract_file_diffs
 
         diff = "diff --git a/foo.py\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-x\n+y\n"
         files = extract_file_diffs(diff)
@@ -80,7 +80,7 @@ class TestExtractFileDiffs:
         assert files[0].filename == "foo.py"
 
     def test_plus_plus_plus_fallback(self):
-        from sftui.parsing import extract_file_diffs
+        from sfctl.parsing import extract_file_diffs
 
         diff = "+++ b/hello.py\n@@ -1 +1 @@\n-x\n+y\n"
         files = extract_file_diffs(diff)
@@ -88,7 +88,7 @@ class TestExtractFileDiffs:
         assert files[0].filename == "hello.py"
 
     def test_unknown_file_fallback(self):
-        from sftui.parsing import extract_file_diffs
+        from sfctl.parsing import extract_file_diffs
 
         diff = "some random diff content\n@@ -1 +1 @@\n-x\n+y\n"
         files = extract_file_diffs(diff)
@@ -98,28 +98,28 @@ class TestExtractFileDiffs:
 
 class TestBuildDiffLineMap:
     def test_hunk_header_mapping(self):
-        from sftui.parsing import build_diff_line_map
+        from sfctl.parsing import build_diff_line_map
 
         diff = (
             "diff --git a/f.py b/f.py\n--- a/f.py\n+++ b/f.py\n"
             "@@ -10,3 +10,3 @@\n context\n-old\n+new\n"
         )
         line_map = build_diff_line_map(diff)
-        assert line_map[3] == 10  # hunk header
-        assert line_map[4] == 10  # context line
-        assert line_map[5] == 11  # deletion
-        assert line_map[6] == 11  # addition
+        assert 3 not in line_map  # hunk header excluded
+        assert line_map[4] == 10  # context line (new-file)
+        assert line_map[5] == 11  # deletion (old-file)
+        assert line_map[6] == 11  # addition (new-file)
 
 
 class TestDiffLineRef:
     def test_single_line(self):
-        from sftui.parsing import diff_line_ref
+        from sfctl.parsing import diff_line_ref
 
         diff = "@@ -1,3 +10,3 @@\n context\n-old\n+new\n"
         assert diff_line_ref(diff, 1, 1) == "L10"
 
     def test_range(self):
-        from sftui.parsing import diff_line_ref
+        from sfctl.parsing import diff_line_ref
 
         diff = "@@ -1,3 +10,3 @@\n ctx\n-old\n+new\n"
         ref = diff_line_ref(diff, 1, 3)
@@ -127,7 +127,7 @@ class TestDiffLineRef:
         assert "-L" in ref
 
     def test_reversed_range(self):
-        from sftui.parsing import diff_line_ref
+        from sfctl.parsing import diff_line_ref
 
         diff = "@@ -1,3 +10,3 @@\n ctx\n-old\n+new\n"
         ref = diff_line_ref(diff, 3, 1)
@@ -136,7 +136,7 @@ class TestDiffLineRef:
 
 class TestBumpHeadings:
     def test_shift_up(self):
-        from sftui.parsing import bump_headings
+        from sfctl.parsing import bump_headings
 
         text = "# Title\n## Section\n### Sub"
         result = bump_headings(text, parent_level=2)
@@ -145,46 +145,46 @@ class TestBumpHeadings:
         assert "##### Sub" in result
 
     def test_no_headings(self):
-        from sftui.parsing import bump_headings
+        from sfctl.parsing import bump_headings
 
         assert bump_headings("plain text") == "plain text"
 
     def test_empty(self):
-        from sftui.parsing import bump_headings
+        from sfctl.parsing import bump_headings
 
         assert bump_headings("") is not None
 
 
 class TestRankingHelpers:
     def test_get_full_ranking_preference(self, fixture_data):
-        from sftui.parsing import get_full_ranking
+        from sfctl.parsing import get_full_ranking
 
         ranking = get_full_ranking(fixture_data["history"][0], "preference_ranking")
         assert ranking.index("C") < ranking.index("A") < ranking.index("B")
 
     def test_get_full_ranking_response_quality(self, fixture_data):
-        from sftui.parsing import get_full_ranking
+        from sfctl.parsing import get_full_ranking
 
         ranking = get_full_ranking(fixture_data["history"][0], "response_quality_ranking")
         assert "C" in ranking and "A" in ranking and "B" in ranking
 
     def test_get_full_ranking_missing_key(self, fixture_data):
-        from sftui.parsing import get_full_ranking
+        from sfctl.parsing import get_full_ranking
 
         assert get_full_ranking(fixture_data["history"][0], "nonexistent_ranking") == ""
 
     def test_get_full_ranking_empty_value(self):
-        from sftui.parsing import get_full_ranking
+        from sfctl.parsing import get_full_ranking
 
         assert get_full_ranking({"r": {"value": []}}, "r") == ""
 
     def test_get_full_ranking_items_without_id(self):
-        from sftui.parsing import get_full_ranking
+        from sfctl.parsing import get_full_ranking
 
         assert get_full_ranking({"r": {"value": [{"id": ""}, {"id": None}]}}, "r") == ""
 
     def test_to_label(self):
-        from sftui.parsing import to_label
+        from sfctl.parsing import to_label
 
         assert to_label("model_a") == "A"
         assert to_label("model_b") == "B"
@@ -192,7 +192,7 @@ class TestRankingHelpers:
         assert to_label("") == ""
 
     def test_rank_color(self):
-        from sftui.parsing import rank_color
+        from sfctl.parsing import rank_color
 
         assert rank_color(0, 3) == "green"
         assert rank_color(1, 3) == "yellow"
@@ -202,14 +202,14 @@ class TestRankingHelpers:
 
 class TestTraceFormatting:
     def test_clean_event_name(self):
-        from sftui.parsing import clean_event_name
+        from sfctl.parsing import clean_event_name
 
         assert clean_event_name("__sf_tool_event_thinking__") == "thinking"
         assert clean_event_name("list_dir") == "list_dir"
         assert clean_event_name("") == "unknown"
 
     def test_group_events(self, parsed):
-        from sftui.parsing import group_events
+        from sfctl.parsing import group_events
 
         groups = group_events(parsed.models[0])
         assert "thinking" in groups
@@ -218,7 +218,7 @@ class TestTraceFormatting:
             assert len(group_events(m)) >= 2
 
     def test_format_event_line_normal(self):
-        from sftui.parsing import format_event_line
+        from sfctl.parsing import format_event_line
 
         ev = {"name": "list_dir", "exit_code": "no_error", "wall_time": 0}
         line = format_event_line(ev)
@@ -226,7 +226,7 @@ class TestTraceFormatting:
         assert "no_error" not in line
 
     def test_format_event_line_error(self):
-        from sftui.parsing import format_event_line
+        from sfctl.parsing import format_event_line
 
         ev = {"name": "run_terminal_cmd", "exit_code": "error", "wall_time": 500}
         line = format_event_line(ev)
@@ -234,7 +234,7 @@ class TestTraceFormatting:
         assert "500ms" in line
 
     def test_trace_type_color_cycles(self):
-        from sftui.parsing import trace_type_color
+        from sfctl.parsing import trace_type_color
 
         assert trace_type_color(0) == trace_type_color(10)
         assert len({trace_type_color(i) for i in range(10)}) > 1
@@ -242,19 +242,19 @@ class TestTraceFormatting:
 
 class TestFeedbackDedup:
     def test_fixture_dedupes(self, fixture_data):
-        from sftui.parsing import dedupe_feedback
+        from sfctl.parsing import dedupe_feedback
 
         unique = dedupe_feedback(fixture_data["history"], fixture_data["feedback"])
         assert len(unique) == 1
         assert unique[0]["score"] == 7
 
     def test_empty(self):
-        from sftui.parsing import dedupe_feedback
+        from sfctl.parsing import dedupe_feedback
 
         assert dedupe_feedback([], {}) == []
 
     def test_no_duplicates(self):
-        from sftui.parsing import dedupe_feedback
+        from sfctl.parsing import dedupe_feedback
 
         history = [
             {"feedback": {"entries": [{"timestamp": 1, "msg": "a"}]}},
@@ -266,21 +266,21 @@ class TestFeedbackDedup:
 
 class TestParseJsonField:
     def test_valid_json(self):
-        from sftui.parsing import _parse_json_field
+        from sfctl.parsing import _parse_json_field
 
         assert _parse_json_field("[1,2,3]") == [1, 2, 3]
 
     def test_none(self):
-        from sftui.parsing import _parse_json_field
+        from sfctl.parsing import _parse_json_field
 
         assert _parse_json_field(None) == []
 
     def test_empty_string(self):
-        from sftui.parsing import _parse_json_field
+        from sfctl.parsing import _parse_json_field
 
         assert _parse_json_field("") == []
 
     def test_invalid_json(self):
-        from sftui.parsing import _parse_json_field
+        from sfctl.parsing import _parse_json_field
 
         assert _parse_json_field("not json") == []

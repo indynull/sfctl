@@ -1,4 +1,4 @@
-"""Shared test fixtures for sftui."""
+"""Shared test fixtures for sfctl."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def fixture_data() -> dict:
 
 @pytest.fixture
 def parsed(fixture_data):
-    from sftui.parsing import parse_content
+    from sfctl.parsing import parse_content
 
     return parse_content(fixture_data["content"])
 
@@ -26,7 +26,7 @@ def parsed(fixture_data):
 @pytest.fixture(autouse=True)
 def isolated_dirs(tmp_path, monkeypatch):
     """Redirect config and data dirs to tmp_path for every test."""
-    from sftui import config, scoring
+    from sfctl import config, scoring
 
     cfg = tmp_path / "config"
     cfg.mkdir()
@@ -40,7 +40,7 @@ def isolated_dirs(tmp_path, monkeypatch):
 @pytest.fixture
 def make_app(fixture_data):
     """Factory fixture for creating a StarfleetApp with test data."""
-    from sftui.app import StarfleetApp
+    from sfctl.app import StarfleetApp
 
     def _make(task_id=TASK_ID, data=None, cookies=None):
         return StarfleetApp(task_id, data or fixture_data, cookies=cookies)

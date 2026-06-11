@@ -127,13 +127,16 @@ def _model_letter(index: int) -> str:
     return chr(65 + index)
 
 
-def render_annotations_only(annotations: list[list[Annotation]]) -> str:
-    """Render annotations (yanked snippets + tallies) as markdown, without summary."""
+def render_annotations_md(
+    annotations: list[list[Annotation]], summary: str
+) -> str:
+    """Render all annotations + summary as readable markdown."""
     parts: list[str] = []
 
     for i, model_anns in enumerate(annotations):
         if not model_anns:
             continue
+        # Score tallies per context
         tallies: dict[str, int] = {}
         for a in model_anns:
             ctx = a.context if a.context in ("overall", "response", "code") else "overall"
@@ -149,8 +152,6 @@ def render_annotations_only(annotations: list[list[Annotation]]) -> str:
         parts.append(f"## Model {_model_letter(i)}{tally_str}\n")
 
         for a in model_anns:
-            if not a.filename and not a.snippet and not a.comment:
-                continue
             sentiment_marker = {1: "(+1)", -1: "(-1)", 0: "(0)"}[a.sentiment]
             line = sentiment_marker
             if a.comment:
@@ -162,25 +163,15 @@ def render_annotations_only(annotations: list[list[Annotation]]) -> str:
                 parts.append(f"`{a.filename}`")
             if a.snippet:
                 parts.append(f"```diff\n{a.snippet}\n```")
-            parts.append("")
+            parts.append("")  # blank line between annotations
 
-    return "\n".join(parts)
-
-
-def render_annotations_md(
-    annotations: list[list[Annotation]], summary: str
-) -> str:
-    """Render all annotations + summary as readable markdown."""
-    ann_text = render_annotations_only(annotations)
-    parts: list[str] = []
-    if ann_text.strip():
-        parts.append(ann_text)
     if summary.strip():
         if parts:
             parts.append("---\n")
         parts.append("## Summary\n")
         parts.append(summary.strip())
         parts.append("")
+
     return "\n".join(parts)
 
 

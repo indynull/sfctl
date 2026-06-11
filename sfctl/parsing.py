@@ -216,16 +216,16 @@ def clean_event_name(name: str) -> str:
 
 
 _TRACE_COLORS = [
-    "#5f87ff",
-    "#d75fd7",
-    "#5fd7d7",
-    "#d7af5f",
-    "#d75f5f",
-    "#5fd75f",
-    "#5f87af",
-    "#875f87",
-    "#00af87",
-    "#af8700",
+    "bright_blue",
+    "bright_magenta",
+    "bright_cyan",
+    "bright_yellow",
+    "bright_red",
+    "bright_green",
+    "steel_blue",
+    "plum4",
+    "dark_cyan",
+    "dark_goldenrod",
 ]
 
 

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from sftui.models import ModelData, ModelScores
-from sftui.ranking import (
+from sfctl.models import ModelData, ModelScores
+from sfctl.ranking import (
     diff_items,
     local_ranking_summary,
     model_id,
@@ -50,16 +50,16 @@ class TestNavItems:
         assert ("A", "model-a") in items
         assert ("B", "model-b") in items
         assert ("C", "model-c") in items
-        assert ("Feedback", "feedback") in items
+        assert ("Overview", "overview") in items
 
     def test_empty_models(self):
         items = nav_items([])
-        assert items == [("Feedback", "feedback")]
+        assert items == [("Overview", "overview")]
 
 
 class TestDiffItems:
     def test_with_file_diffs(self):
-        from sftui.models import FileDiff
+        from sfctl.models import FileDiff
 
         models = _make_models(2)
         models[0].file_diffs = [FileDiff("foo.py", "diff"), FileDiff("bar.py", "diff")]

@@ -7,20 +7,20 @@ TASK_ID = "t-D2F1God7q8QRa48qVJpO1"
 
 class TestTaskResponse:
     def test_task_id(self, fixture_data):
-        from sftui.models import TaskResponse
+        from sfctl.models import TaskResponse
 
         resp = TaskResponse.model_validate(fixture_data["task"])
         assert resp.taskId == TASK_ID
 
     def test_status_and_review_level(self, fixture_data):
-        from sftui.models import TaskResponse
+        from sfctl.models import TaskResponse
 
         resp = TaskResponse.model_validate(fixture_data["task"])
         assert resp.status == "ready"
         assert resp.reviewLevel == 2
 
     def test_action_history(self, fixture_data):
-        from sftui.models import TaskResponse
+        from sfctl.models import TaskResponse
 
         resp = TaskResponse.model_validate(fixture_data["task"])
         assert len(resp.actionHistory) == 2
@@ -38,7 +38,7 @@ class TestTaskResponse:
 
 class TestHistoryEntry:
     def test_rankings_present(self, fixture_data):
-        from sftui.models import HistoryEntry
+        from sfctl.models import HistoryEntry
 
         for h in fixture_data["history"]:
             entry = HistoryEntry.model_validate(h)
@@ -47,27 +47,27 @@ class TestHistoryEntry:
             assert entry.code_quality_ranking is not None
 
     def test_ranking_values(self, fixture_data):
-        from sftui.models import HistoryEntry
+        from sfctl.models import HistoryEntry
 
         entry = HistoryEntry.model_validate(fixture_data["history"][0])
         ids = [item.id for item in entry.preference_ranking.value]
         assert ids == ["model_c", "model_a", "model_b"]
 
     def test_justification(self, fixture_data):
-        from sftui.models import HistoryEntry
+        from sfctl.models import HistoryEntry
 
         entry = HistoryEntry.model_validate(fixture_data["history"][0])
         assert isinstance(entry.justification.value, str)
         assert "model a" in entry.justification.value.lower()
 
     def test_confidence(self, fixture_data):
-        from sftui.models import HistoryEntry
+        from sfctl.models import HistoryEntry
 
         entry = HistoryEntry.model_validate(fixture_data["history"][0])
         assert entry.confidence.value == "high"
 
     def test_email_and_review_level(self, fixture_data):
-        from sftui.models import HistoryEntry
+        from sfctl.models import HistoryEntry
 
         e0 = HistoryEntry.model_validate(fixture_data["history"][0])
         assert e0.email == "athaninayagam@teachx.ai"
@@ -77,7 +77,7 @@ class TestHistoryEntry:
         assert e1.reviewLevel == 1
 
     def test_feedback_nested(self, fixture_data):
-        from sftui.models import HistoryEntry
+        from sfctl.models import HistoryEntry
 
         e1 = HistoryEntry.model_validate(fixture_data["history"][1])
         assert e1.feedback is not None
@@ -87,7 +87,7 @@ class TestHistoryEntry:
 
 class TestFeedbackResponse:
     def test_entries(self, fixture_data):
-        from sftui.models import FeedbackResponse
+        from sfctl.models import FeedbackResponse
 
         resp = FeedbackResponse.model_validate(fixture_data["feedback"])
         assert len(resp.entries) == 1
@@ -101,7 +101,7 @@ class TestFeedbackResponse:
 
 class TestContentResponse:
     def test_structure(self, fixture_data):
-        from sftui.models import ContentResponse
+        from sfctl.models import ContentResponse
 
         resp = ContentResponse.model_validate(fixture_data["content"])
         assert resp.taskId == TASK_ID
@@ -111,27 +111,27 @@ class TestContentResponse:
 
 class TestModelScores:
     def test_defaults(self):
-        from sftui.models import ModelScores
+        from sfctl.models import ModelScores
 
         s = ModelScores()
         assert s.total() == 0
         assert not s.any_nonzero()
 
     def test_total(self):
-        from sftui.models import ModelScores
+        from sfctl.models import ModelScores
 
         s = ModelScores(overall=3, response=2, code=1)
         assert s.total() == 6
         assert s.any_nonzero()
 
     def test_round_trip(self):
-        from sftui.models import ModelScores
+        from sfctl.models import ModelScores
 
         s = ModelScores(overall=5, response=-1, code=3)
         assert s == ModelScores.from_dict(s.to_dict())
 
     def test_from_dict_partial(self):
-        from sftui.models import ModelScores
+        from sfctl.models import ModelScores
 
         s = ModelScores.from_dict({"overall": 2})
         assert s.overall == 2
@@ -139,7 +139,7 @@ class TestModelScores:
         assert s.code == 0
 
     def test_negative_scores(self):
-        from sftui.models import ModelScores
+        from sfctl.models import ModelScores
 
         s = ModelScores(overall=-3, response=-2, code=-1)
         assert s.total() == -6

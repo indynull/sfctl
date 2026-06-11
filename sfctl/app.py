@@ -20,25 +20,10 @@ from textual.widgets import (
     TextArea,
 )
 
-from sfctl import ids, ranking
+from sfctl import ranking
 from sfctl.commands import NavigationProvider
 from sfctl.config import get_web_url, load_config, update_config
 from sfctl.constants import ARROW_DOWN, ARROW_UP, EM_DASH
-from sfctl.task_types import TaskType, detect_task_type
-from sfctl.ids import (
-    Context,
-    model_header_id,
-    model_id,
-    model_letter,
-    model_tabs_id,
-    tab_diffs_id,
-    tab_entry_id,
-    tab_response_id,
-    tab_trace_id,
-    vote_down_id,
-    vote_label_id,
-    vote_up_id,
-)
 from sfctl.models import Annotation, ModelData, ModelScores, ParsedContent
 from sfctl.parsing import (
     bump_headings,
@@ -60,13 +45,13 @@ from sfctl.scoring import (
     annotations_path,
     justification_path,
     load_annotations,
+    render_annotations_md,
     save_annotations,
     scores_from_annotations,
     scores_path,
 )
 from sfctl.screens import (
     DiffSearchModal,
-    HelpModal,
     YankCommentModal,
     build_clipboard_text,
 )
@@ -79,6 +64,7 @@ class StarfleetApp(App):
     CSS_PATH = "app.tcss"
 
     current_model_index: reactive[int] = reactive(0)
+    show_hidden: reactive[bool] = reactive(False)
     scores: reactive[list[ModelScores]] = reactive(list, always_update=True)
 
     def watch_scores(self, new_scores: list[ModelScores]) -> None:
@@ -89,6 +75,17 @@ class StarfleetApp(App):
         for idx in range(len(new_scores)):
             self._refresh_vote_labels(idx)
 
+    def watch_show_hidden(self, value: bool) -> None:
+        if not hasattr(self, "_overview_populated"):
+            return
+        if value and self._task_email and self._task_email != EM_DASH:
+            self.sub_title = f"Task {self.task_id}  |  {self._task_email}"
+        else:
+            self.sub_title = f"Task {self.task_id}"
+        if self._overview_populated:
+            for widget in self.query(".hidden-detail"):
+                widget.display = value
+
     BINDINGS = [
         Binding("q", "quit", "Quit", show=True),
         Binding("1", "go_model(0)", "A", show=True),
@@ -96,7 +93,7 @@ class StarfleetApp(App):
         Binding("3", "go_model(2)", "C", show=True),
         Binding("f", "go_to('overview')", "Overview", show=True),
         Binding("ctrl+e", "edit_justification", "Edit", show=True),
-        Binding("y", "yank_file", "Yank"),
+        Binding("y", "yank_file", "Yank", show=True),
         Binding("+", "vote_up", f"{ARROW_UP} Up", show=True),
         Binding("-", "vote_down", f"{ARROW_DOWN} Down", show=True),
         Binding("ctrl+f", "search_diffs", "Find File", show=True),
@@ -105,8 +102,7 @@ class StarfleetApp(App):
         Binding("c", "copy_summary", "Copy"),
         Binding("tab", "next_tab", "Next Tab", show=False, priority=True),
         Binding("shift+tab", "prev_tab", "Prev Tab", show=False, priority=True),
-        Binding("m", "toggle_maximize", "Max", show=True),
-
+        Binding("ctrl+d", "toggle_hidden", "", show=False),
         Binding("?", "help", "Help"),
     ]
 
@@ -130,13 +126,8 @@ class StarfleetApp(App):
         self._trace_type_map: dict[str, int] = {}
 
         task = data.get("task", {})
-        email = (task.get("actionHistory") or [{}])[0].get("userId", "")
-        if email and email != EM_DASH:
-            self.sub_title = f"Task {self.task_id}  |  {email}"
-        else:
-            self.sub_title = f"Task {self.task_id}"
-
-        self.task_type = detect_task_type(data)
+        self._task_email = (task.get("actionHistory") or [{}])[0].get("userId", "")
+        self.sub_title = f"Task {self.task_id}"
 
         config = load_config()
         if "theme" in config:
@@ -144,11 +135,11 @@ class StarfleetApp(App):
 
     @staticmethod
     def _model_letter(index: int) -> str:
-        return model_letter(index)
+        return ranking.model_letter(index)
 
     @staticmethod
     def _model_id(index: int) -> str:
-        return model_id(index)
+        return ranking.model_id(index)
 
     def nav_items(self) -> list[tuple[str, str]]:
         return ranking.nav_items(self.models)
@@ -162,44 +153,33 @@ class StarfleetApp(App):
         repo = self.parsed.repository
         prompt = bump_headings(self.parsed.current_prompt or EM_DASH)
         self.task_url = get_web_url(f"/tasks/{self.task_id}")
-        with Vertical(id=ids.INFO_BAR):
-            yield Link(f"Task: {self.task_id}", url=self.task_url, id=ids.TASK_BAR)
-            yield Static(self.rankings_summary(), id=ids.SCOREBOARD)
+        with Vertical(id="info-bar"):
+            yield Link(f"Task: {self.task_id}", url=self.task_url, id="task-bar")
+            yield Static(self.rankings_summary(), id="scoreboard")
             if repo and repo != EM_DASH:
                 yield Static(
-                    f"[bold]Repo:[/bold] {repo.replace('[', '(').replace(']', ')')}", id=ids.REPO_BAR
+                    f"[bold]Repo:[/bold] {repo.replace('[', '(').replace(']', ')')}", id="repo-bar"
                 )
-            with Collapsible(title="Prompt", collapsed=False, id=ids.PROMPT_BAR):
-                with ScrollableContainer():
-                    yield Static(RichMarkdown(prompt))
+            with Collapsible(title="Prompt", collapsed=False, id="prompt-bar"):
+                yield Static(RichMarkdown(prompt))
 
         yield Footer()
 
+        initial = self._model_id(0) if self.models else "overview"
         self._populated_models = set()
         self._overview_populated = False
 
-        if self.task_type == TaskType.UNKNOWN:
-            with ScrollableContainer(id=ids.OVERVIEW):
-                yield Static(
-                    "[bold]Unsupported task type[/bold]\n\n"
-                    "This task does not match a known layout. "
-                    "Only the raw overview and history are available.",
-                    classes="status",
-                )
-            return
-
-        initial = self._model_id(0) if self.models else ids.OVERVIEW
-        with ContentSwitcher(initial=initial, id=ids.MAIN_SWITCHER):
+        with ContentSwitcher(initial=initial, id="main-switcher"):
             for idx in range(len(self.models)):
                 mid = self._model_id(idx)
                 with ScrollableContainer(id=mid):
                     yield Static(
                         f"[bold]{self._model_letter(idx)}[/bold]",
                         classes="view-header",
-                        id=model_header_id(mid),
+                        id=f"header-{mid}",
                     )
 
-            with ScrollableContainer(id=ids.OVERVIEW):
+            with ScrollableContainer(id="overview"):
                 pass  # populated lazily by _populate_overview()
 
     @staticmethod
@@ -219,9 +199,9 @@ class StarfleetApp(App):
         score = getattr(s, context, 0)
         sign = f"+{score}" if score > 0 else str(score)
         return Horizontal(
-            Button(f"{ARROW_UP}", id=vote_up_id(idx, context), classes="vote-btn"),
-            Static(sign, classes="vote-score", id=vote_label_id(idx, context)),
-            Button(f"{ARROW_DOWN}", id=vote_down_id(idx, context), classes="vote-btn"),
+            Button(f"{ARROW_UP}", id=f"vote-up-{idx}-{context}", classes="vote-btn"),
+            Static(sign, classes="vote-score", id=f"vote-label-{idx}-{context}"),
+            Button(f"{ARROW_DOWN}", id=f"vote-down-{idx}-{context}", classes="vote-btn"),
             classes="vote-bar",
         )
 
@@ -229,8 +209,8 @@ class StarfleetApp(App):
         if idx >= len(self.scores):
             return
         s = self.scores[idx]
-        for context in Context:
-            label = self.query_one_optional(f"#{vote_label_id(idx, context)}", Static)
+        for context in ("overall", "response", "code"):
+            label = self.query_one_optional(f"#vote-label-{idx}-{context}", Static)
             if label:
                 score = getattr(s, context, 0)
                 sign = f"+{score}" if score > 0 else str(score)
@@ -247,7 +227,13 @@ class StarfleetApp(App):
         idx = int(parts[2])
         context = "-".join(parts[3:])
         delta = 1 if direction == "up" else -1
-        self._apply_vote(idx, context, delta)
+        annotation = Annotation(context=context, sentiment=delta)
+        self.add_annotation(idx, annotation)
+        arrow = ARROW_UP if delta > 0 else ARROW_DOWN
+        color = "green" if delta > 0 else "red"
+        score = getattr(self.scores[idx], context, 0)
+        sign = f"+{score}" if score > 0 else str(score)
+        self.notify(f"[{color}]{arrow}[/] {self._model_letter(idx)} {context}: {sign}")
 
     async def _populate_model(self, idx: int) -> None:
         """Lazily compose a model view's content on first switch."""
@@ -264,10 +250,10 @@ class StarfleetApp(App):
         grouped = group_events(m)
         total = sum(1 for e in m.tool_events if isinstance(e, dict))
 
-        tabs = TabbedContent(id=model_tabs_id(mid))
+        tabs = TabbedContent(id=f"tabs-{mid}")
         await container.mount(tabs)
 
-        response_pane = TabPane("Response", id=tab_response_id(mid))
+        response_pane = TabPane("Response", id=f"tab-response-{mid}")
         await tabs.add_pane(response_pane)
         summary = self._model_summary_text(m)
         await response_pane.mount_all([
@@ -275,20 +261,22 @@ class StarfleetApp(App):
             Static(RichMarkdown(summary)),
         ])
 
-        trace_pane = TabPane(f"Trace ({total})", id=tab_trace_id(mid))
+        trace_pane = TabPane(f"Trace ({total})", id=f"tab-trace-{mid}")
         await tabs.add_pane(trace_pane)
         if not grouped:
             await trace_pane.mount(Static("No tool events.", classes="status"))
         else:
             sorted_groups = sorted(grouped.items(), key=lambda x: -len(x[1]))
-            summary_parts = []
+            trace_widgets: list[Static | LazyCollapsible] = []
             for ename, events in sorted_groups:
                 ti = self._trace_type_index(ename)
                 color = trace_type_color(ti)
-                summary_parts.append(f"[{color}]{ename}[/] [dim]{len(events)}x[/]")
-            trace_widgets: list[Static | LazyCollapsible] = [
-                Static("  " + "  ".join(summary_parts), classes="trace-summary-row"),
-            ]
+                trace_widgets.append(
+                    Static(
+                        f"  [{color}]{ename}[/]  [dim]{len(events)}x[/]",
+                        classes="trace-summary-row",
+                    )
+                )
             trace_c = LazyCollapsible.for_trace(
                 title=f"Event Details ({total} events)",
                 events=m.tool_events,
@@ -296,7 +284,7 @@ class StarfleetApp(App):
             trace_widgets.append(trace_c)
             await trace_pane.mount_all(trace_widgets)
 
-        diffs_pane = TabPane(f"Diffs ({len(m.file_diffs)})", id=tab_diffs_id(mid))
+        diffs_pane = TabPane(f"Diffs ({len(m.file_diffs)})", id=f"tab-diffs-{mid}")
         await tabs.add_pane(diffs_pane)
         diffs_widgets: list = [self._vote_bar(idx, "code")]
         if m.file_diffs:
@@ -316,28 +304,29 @@ class StarfleetApp(App):
             return
         self._overview_populated = True
 
-        container = self.query_one(f"#{ids.OVERVIEW}", ScrollableContainer)
+        container = self.query_one("#overview", ScrollableContainer)
 
         history = self.data.get("history", [])
         if not isinstance(history, list):
             history = [history]
-        tabs = TabbedContent(id=ids.TABS_OVERVIEW)
+        tabs = TabbedContent(id="tabs-overview")
         await container.mount(tabs)
 
-        current_pane = TabPane("Current", id=ids.TAB_CURRENT)
+        # -- Current (Draft) tab -- always first --
+        current_pane = TabPane("Current", id="tab-current")
         await tabs.add_pane(current_pane)
-        widgets = [
-            Static(self.rankings_summary(), id=ids.JUST_RANKINGS),
-            Markdown(self.summary_text or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*", id=ids.JUST_PREVIEW),
-        ]
-        widgets.append(TextArea(
-            self.summary_text,
-            language="markdown",
-            show_line_numbers=True,
-            id=ids.JUST_EDITOR,
-        ))
-        await current_pane.mount_all(widgets)
-        self.query_one(f"#{ids.JUST_EDITOR}").display = False
+        rendered = render_annotations_md(self.annotations, self.summary_text)
+        await current_pane.mount_all([
+            Static(self.rankings_summary(), id="just-rankings"),
+            Markdown(rendered, id="justification-preview"),
+            TextArea(
+                self.summary_text,
+                language="markdown",
+                show_line_numbers=True,
+                id="justification-editor",
+            ),
+        ])
+        self.query_one("#justification-editor").display = False
 
         # -- History entry tabs (newest first) --
         tab_idx = 0
@@ -355,15 +344,29 @@ class StarfleetApp(App):
                     continue
 
                 kind = "revision" if changed else "review"
-                pane = TabPane(f"L{level} {kind}", id=tab_entry_id(tab_idx))
+                pane = TabPane(f"L{level} {kind}", id=f"tab-entry-{tab_idx}")
                 await tabs.add_pane(pane)
 
                 widgets_to_mount = [Static(format_history_entry(entry, orig_idx))]
 
+                # Hidden email detail
+                email = entry.get("email", "")
+                if email:
+                    email_w = Static(
+                        f"[dim]Email:[/dim] {email.replace('[', '(').replace(']', ')')}",
+                        classes="hidden-detail",
+                    )
+                    email_w.display = self.show_hidden
+                    widgets_to_mount.append(email_w)
+
                 # Feedback new in this entry (inline)
                 for fb in entry_fb:
                     ts = str(fb.get("timestamp", ""))[:19]
-                    fb_c = Collapsible(title=f"Feedback | {ts}", collapsed=False, classes="inner")
+                    fb_title = f"Feedback | {ts}"
+                    if self.show_hidden:
+                        fb_email = fb.get("email", "unknown")
+                        fb_title = f"Feedback | {fb_email} | {ts}"
+                    fb_c = Collapsible(title=fb_title, collapsed=False, classes="inner")
                     widgets_to_mount.append(fb_c)
 
                 # Diff from previous entry (only for revisions)
@@ -415,10 +418,6 @@ class StarfleetApp(App):
                 tab_idx += 1
 
     async def on_mount(self) -> None:
-        if self.task_type == TaskType.UNKNOWN:
-            self.notify(f"Loaded task {self.task_id} (unsupported type)")
-            self._maybe_show_tutorial()
-            return
         if self.models:
             await self._populate_model(self.current_model_index)
             self.notify(f"Loaded task {self.task_id} ({len(self.models)} models)")
@@ -465,24 +464,23 @@ class StarfleetApp(App):
     def _save_summary_from_editor(self) -> None:
         """Save summary text from the inline editor if it exists."""
         try:
-            editor = self.query_one(f"#{ids.JUST_EDITOR}", TextArea)
+            editor = self.query_one("#justification-editor", TextArea)
             self._save_summary(editor.text)
         except Exception:
             pass
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        """Auto-save and switch back to preview when leaving Current tab."""
         if (
             self._overview_populated
-            and event.tabbed_content.id == ids.TABS_OVERVIEW
-            and str(event.pane.id) != ids.TAB_CURRENT
+            and event.tabbed_content.id == "tabs-overview"
+            and str(event.pane.id) != "tab-current"
         ):
             self._show_justification_preview()
 
     async def go_to(self, section_id: str) -> None:
-        if self.task_type == TaskType.UNKNOWN:
-            return
-        self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher).current = section_id
-        if section_id == ids.OVERVIEW:
+        self.query_one("#main-switcher", ContentSwitcher).current = section_id
+        if section_id == "overview":
             await self._populate_overview()
             return
         for i in range(len(self.models)):
@@ -496,9 +494,9 @@ class StarfleetApp(App):
             return
         mid = self._model_id(model_index)
         await self.go_to(mid)
-        tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-        tabs.active = tab_diffs_id(mid)
-        diffs_pane = tabs.get_pane(tab_diffs_id(mid))
+        tabs = self.query_one(f"#tabs-{mid}", TabbedContent)
+        tabs.active = f"tab-diffs-{mid}"
+        diffs_pane = tabs.get_pane(f"tab-diffs-{mid}")
         container = self.query_one(f"#{mid}", ScrollableContainer)
         for collapsible in diffs_pane.query(Collapsible):
             if str(collapsible.title) == filename:
@@ -515,16 +513,14 @@ class StarfleetApp(App):
 
     def _active_tabbed_content(self) -> TabbedContent | None:
         """Return the TabbedContent widget in the currently visible view."""
-        if self.task_type == TaskType.UNKNOWN:
-            return None
         switcher = self.query_one("#main-switcher", ContentSwitcher)
         current = switcher.current
         if not current:
             return None
         try:
-            if current == ids.OVERVIEW:
-                return self.query_one(f"#{ids.TABS_OVERVIEW}", TabbedContent)
-            return self.query_one(f"#{model_tabs_id(current)}", TabbedContent)
+            if current == "overview":
+                return self.query_one("#tabs-overview", TabbedContent)
+            return self.query_one(f"#tabs-{current}", TabbedContent)
         except Exception:
             return None
 
@@ -550,23 +546,9 @@ class StarfleetApp(App):
         if tabs:
             tabs.action_previous_tab()
 
-    def action_toggle_maximize(self) -> None:
-        if self.screen.maximized:
-            self.screen.minimize()
-            return
-        focused = self.focused
-        if focused is None:
-            return
-        # Walk up from focused widget to find a maximizable ancestor
-        from textual.widget import Widget
-
-        widget = focused
-        while widget is not None:
-            if isinstance(widget, Widget) and widget.allow_maximize:
-                self.screen.maximize(widget, container=False)
-                return
-            widget = widget.parent
-        self.notify("Nothing to maximize here.", severity="warning")
+    def action_toggle_hidden(self) -> None:
+        self.show_hidden = not self.show_hidden
+        self.notify(f"Hidden details: {'on' if self.show_hidden else 'off'}")
 
     def set_theme(self, theme_name: str) -> None:
         self.theme = theme_name
@@ -586,12 +568,7 @@ class StarfleetApp(App):
         if not m.file_diffs:
             self.notify("No diffs in this model.", severity="warning")
             return
-
-        async def _on_result(result: tuple[int, str] | None) -> None:
-            if result:
-                await self.go_to_diff(result[0], result[1])
-
-        self.push_screen(DiffSearchModal(self.current_model_index, m.file_diffs), _on_result)
+        self.push_screen(DiffSearchModal(self.current_model_index, m.file_diffs, self))
 
     def action_yank_file(self) -> None:
         focused = self.focused
@@ -610,52 +587,42 @@ class StarfleetApp(App):
             line_ref = diff_line_ref(focused.diff_text, start_idx, end_idx)
         else:
             line_ref = diff_line_ref(focused.diff_text, 0, len(focused.diff_text.splitlines()) - 1)
-        filename = focused.filename
-
-        def _on_result(result: tuple[int, str] | None) -> None:
-            if result:
-                _, block = result
-                if self.summary_text and not self.summary_text.endswith("\n"):
-                    self.summary_text += "\n"
-                self.summary_text += block
-                self._save_summary(self.summary_text)
-                self._refresh_overview_annotations()
-                self.notify(f"Yanked snippet from {filename}")
-
         self.push_screen(
             YankCommentModal(
                 self.current_model_index,
                 focused.model_name,
-                filename,
+                focused.filename,
                 snippet,
                 line_ref,
-            ),
-            _on_result,
+                self,
+            )
         )
 
-    def on_diff_display_vote_requested(self, event: DiffDisplay.VoteRequested) -> None:
-        idx = self.current_model_index
-        if idx < 0 or idx >= len(self.models):
-            return
-        self._apply_vote(idx, Context.CODE, event.delta)
-
-    def on_diff_display_yank_requested(self, event: DiffDisplay.YankRequested) -> None:
-        self.action_yank_file()
-
     def _detect_vote_context(self) -> str:
+        if isinstance(self.focused, DiffDisplay):
+            return "code"
         mid = self._model_id(self.current_model_index)
         try:
-            tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
+            tabs = self.query_one(f"#tabs-{mid}", TabbedContent)
             active = tabs.active
-            if active == tab_response_id(mid):
-                return Context.RESPONSE
-            if active in (tab_trace_id(mid), tab_diffs_id(mid)):
-                return Context.CODE
+            if active == f"tab-response-{mid}":
+                return "response"
+            if active in (f"tab-trace-{mid}", f"tab-diffs-{mid}"):
+                return "code"
         except Exception:
             pass
-        return Context.OVERALL
+        return "overall"
 
-    def _apply_vote(self, idx: int, context: str, delta: int) -> None:
+    def _vote(self, delta: int) -> None:
+        idx = self.current_model_index
+        if idx < 0 or idx >= len(self.models):
+            self.notify("Navigate to a model first.", severity="warning")
+            return
+        switcher = self.query_one("#main-switcher", ContentSwitcher)
+        if not switcher.current or not str(switcher.current).startswith("model-"):
+            self.notify("Navigate to a model first.", severity="warning")
+            return
+        context = self._detect_vote_context()
         annotation = Annotation(context=context, sentiment=delta)
         self.add_annotation(idx, annotation)
         score = getattr(self.scores[idx], context)
@@ -663,21 +630,6 @@ class StarfleetApp(App):
         arrow = ARROW_UP if delta > 0 else ARROW_DOWN
         color = "green" if delta > 0 else "red"
         self.notify(f"[{color}]{arrow}[/] {self._model_letter(idx)} {context}: {sign}")
-
-    def _vote(self, delta: int) -> None:
-        if self.task_type == TaskType.UNKNOWN:
-            self.notify("Voting not available for this task type.", severity="warning")
-            return
-        idx = self.current_model_index
-        if idx < 0 or idx >= len(self.models):
-            self.notify("Navigate to a model first.", severity="warning")
-            return
-        switcher = self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher)
-        if not switcher.current or not str(switcher.current).startswith("model-"):
-            self.notify("Navigate to a model first.", severity="warning")
-            return
-        context = self._detect_vote_context()
-        self._apply_vote(idx, context, delta)
 
     def action_vote_up(self) -> None:
         self._vote(1)
@@ -706,7 +658,7 @@ class StarfleetApp(App):
 
     def _update_scoreboard(self) -> None:
         try:
-            board = self.query_one(f"#{ids.SCOREBOARD}", Static)
+            board = self.query_one("#scoreboard", Static)
         except Exception:
             return
         board.update(self.rankings_summary())
@@ -717,7 +669,7 @@ class StarfleetApp(App):
         for idx in range(len(self.models)):
             letter = self._model_letter(idx)
             label = f"[bold]{letter}[/bold]"
-            header = self.query_one_optional(f"#{model_header_id(self._model_id(idx))}", Static)
+            header = self.query_one_optional(f"#header-{self._model_id(idx)}", Static)
             if header:
                 header.update(label)
                 if has_local_votes:
@@ -747,14 +699,15 @@ class StarfleetApp(App):
         save_annotations(self.task_id, self.annotations, self.summary_text)
 
     def _refresh_overview_annotations(self) -> None:
-        """Refresh the overview summary and rankings."""
+        """Refresh the overview preview with current annotations + summary."""
         if not self._overview_populated:
             return
         try:
-            rankings = self.query_one(f"#{ids.JUST_RANKINGS}", Static)
+            preview = self.query_one("#justification-preview", Markdown)
+            rendered = render_annotations_md(self.annotations, self.summary_text)
+            preview.update(rendered)
+            rankings = self.query_one("#just-rankings", Static)
             rankings.update(self.rankings_summary())
-            preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
-            preview.update(self.summary_text or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*")
         except Exception:
             pass
 
@@ -762,41 +715,41 @@ class StarfleetApp(App):
         """Navigate to overview, switch to Current tab, and activate the editor."""
         await self.go_to("overview")
         try:
-            tabs = self.query_one(f"#{ids.TABS_OVERVIEW}", TabbedContent)
-            tabs.active = ids.TAB_CURRENT
+            tabs = self.query_one("#tabs-overview", TabbedContent)
+            tabs.active = "tab-current"
         except Exception:
             pass
         self._show_justification_editor()
 
     def _show_justification_editor(self) -> None:
         try:
-            editor = self.query_one(f"#{ids.JUST_EDITOR}", TextArea)
-            preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
+            editor = self.query_one("#justification-editor", TextArea)
+            preview = self.query_one("#justification-preview", Markdown)
         except Exception:
             return
-        editor.text = self.summary_text
         preview.display = False
         editor.display = True
         editor.focus()
 
     def _show_justification_preview(self) -> None:
         try:
-            editor = self.query_one(f"#{ids.JUST_EDITOR}", TextArea)
-            preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
+            editor = self.query_one("#justification-editor", TextArea)
+            preview = self.query_one("#justification-preview", Markdown)
         except Exception:
             return
         if editor.display:
             self._save_summary(editor.text)
             editor.display = False
-            preview.update(self.summary_text or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*")
             preview.display = True
+            rendered = render_annotations_md(self.annotations, self.summary_text)
+            preview.update(rendered)
 
     def on_key(self, event) -> None:
         """Handle escape from justification editor to switch back to preview."""
         if (
             event.key == "escape"
             and isinstance(self.focused, TextArea)
-            and getattr(self.focused, "id", None) == ids.JUST_EDITOR
+            and getattr(self.focused, "id", None) == "justification-editor"
         ):
             event.prevent_default()
             event.stop()
@@ -804,56 +757,40 @@ class StarfleetApp(App):
 
     _HELP_TEXT = (
         "[bold]Navigation[/bold]\n"
-        "  1/2/3      switch to model A/B/C\n"
-        "  f          overview (review, history, feedback)\n"
-        "  tab        next tab within a view\n"
-        "  shift+tab  previous tab\n"
-        "  m          maximize/restore focused panel (esc also restores)\n\n"
+        "  1/2/3 models | f overview\n"
+        "  tab/shift+tab cycle tabs\n\n"
         "[bold]Review[/bold]\n"
-        "  +/-        vote (diff=code, response=response, else=overall)\n"
-        "  y          yank diff snippet into justification\n\n"
+        "  +/- vote (context: diff=code, response=response, else=overall)\n"
+        "  y   yank snippet (with sentiment & comment)\n\n"
         "[bold]Actions[/bold]\n"
-        "  ctrl+e     edit summary\n"
-        "  ctrl+f     fuzzy file search in current model\n"
-        "  c          copy review to clipboard\n"
-        "  r          refresh data from API\n"
-        "  ctrl+r     reset local annotations and scores\n"
-        "  q          quit"
+        "  ctrl+e edit summary | ctrl+f find file | c copy\n"
+        "  r refresh | ctrl+r reset | q quit"
     )
 
     _TUTORIAL_TEXT = (
         "[bold]Welcome to Starfleet Control[/bold]\n\n"
-        "You're reviewing model outputs for a coding task.\n"
-        "Three models (A/B/C) each attempted the same prompt.\n"
-        "Your job: compare their work and build a structured review.\n\n"
-        "[bold]Navigate[/bold]\n"
-        "  1/2/3  switch between model views\n"
-        "  f      open the overview (your review, history, feedback)\n"
-        "  tab    cycle tabs within a view (Response / Trace / Diffs)\n\n"
-        "[bold]Score[/bold]\n"
-        "  +/-    vote on the current context\n"
-        "         on a diff tab -> scores code quality\n"
-        "         on response tab -> scores response quality\n"
-        "         otherwise -> scores overall\n"
-        "  The scoreboard updates live with your rankings.\n\n"
-        "[bold]Justification[/bold]\n"
-        "  y      yank a diff snippet into your justification\n"
-        "         select lines first, or yank the whole file\n"
-        "  ctrl+e edit your justification (overview tab)\n"
-        "  c      copy review to clipboard\n\n"
-        "Press ? for the full shortcut reference.\n"
-        "Press escape to dismiss."
+        "This is a code review TUI. You compare model outputs and\n"
+        "build a structured review with scores and evidence.\n\n"
+        "[bold]1. Navigate[/bold] -- press 1/2/3 to view models, f for overview\n"
+        "[bold]2. Review[/bold]   -- press + or - to vote on what you see\n"
+        "   Votes are context-aware: on a diff it scores code,\n"
+        "   on a response it scores response quality\n"
+        "[bold]3. Yank[/bold]     -- focus a diff, press y to capture a snippet\n"
+        "   Add a comment and sentiment (+1/0/-1) to explain your score\n"
+        "[bold]4. Summarize[/bold] -- press ctrl+e to write a free-text summary\n"
+        "[bold]5. Export[/bold]   -- press c to copy your full review to clipboard\n\n"
+        "Press ? anytime to see all shortcuts."
     )
 
     def action_help(self) -> None:
-        self.push_screen(HelpModal(self._HELP_TEXT, "Keyboard Shortcuts"))
+        self.notify(self._HELP_TEXT, timeout=15)
 
     def _maybe_show_tutorial(self) -> None:
         config = load_config()
         if config.get("tutorial_seen"):
             return
         update_config(tutorial_seen=True)
-        self.push_screen(HelpModal(self._TUTORIAL_TEXT, "Welcome"))
+        self.notify(self._TUTORIAL_TEXT, timeout=30)
 
     @work(thread=True)
     def action_refresh_data(self) -> None:
@@ -873,10 +810,7 @@ class StarfleetApp(App):
         self.notify("Data refreshed.")
 
     def action_copy_summary(self) -> None:
-        text = build_clipboard_text(
-            self.task_id, self.rankings_summary(),
-            self.summary_text,
-        )
+        text = build_clipboard_text(self)
         if not text.strip():
             self.notify("Nothing to copy.", severity="warning")
             return

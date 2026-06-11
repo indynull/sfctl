@@ -5,9 +5,16 @@ Pure functions -- no Textual imports, no filesystem access, no side effects.
 
 from __future__ import annotations
 
-from sfctl.ids import model_id, model_letter
 from sfctl.models import ModelData, ModelScores
 from sfctl.parsing import bump_headings, get_full_ranking, rank_color
+
+
+def model_letter(index: int) -> str:
+    return chr(65 + index)
+
+
+def model_id(index: int) -> str:
+    return f"model-{chr(97 + index)}"
 
 
 def nav_items(models: list[ModelData]) -> list[tuple[str, str]]:
