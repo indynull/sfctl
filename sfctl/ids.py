@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+
 class Context(StrEnum):
     OVERALL = "overall"
     RESPONSE = "response"
     CODE = "code"
+
 
 MAIN_SWITCHER = "main-switcher"
 INFO_BAR = "info-bar"
@@ -30,35 +32,46 @@ DIFF_SEARCH_MODAL = "diff-search-modal"
 DIFF_SEARCH_INPUT = "diff-search-input"
 DIFF_SEARCH_LIST = "diff-search-list"
 
+
 def model_letter(index: int) -> str:
     return chr(65 + index)
+
 
 def model_id(index: int) -> str:
     return f"model-{chr(97 + index)}"
 
+
 def model_header_id(mid: str) -> str:
     return f"header-{mid}"
+
 
 def model_tabs_id(mid: str) -> str:
     return f"tabs-{mid}"
 
+
 def tab_response_id(mid: str) -> str:
     return f"tab-response-{mid}"
+
 
 def tab_trace_id(mid: str) -> str:
     return f"tab-trace-{mid}"
 
+
 def tab_diffs_id(mid: str) -> str:
     return f"tab-diffs-{mid}"
+
 
 def tab_entry_id(idx: int) -> str:
     return f"tab-entry-{idx}"
 
+
 def vote_up_id(idx: int, ctx: str) -> str:
     return f"vote-up-{idx}-{ctx}"
 
+
 def vote_down_id(idx: int, ctx: str) -> str:
     return f"vote-down-{idx}-{ctx}"
+
 
 def vote_label_id(idx: int, ctx: str) -> str:
     return f"vote-label-{idx}-{ctx}"

@@ -20,7 +20,16 @@ class TestAnnotationPersistence:
         from sfctl.scoring import load_annotations, save_annotations
 
         anns = [
-            [Annotation(filename="a.py", line_ref="L1", snippet="+x", comment="good", context="code", sentiment=1)],
+            [
+                Annotation(
+                    filename="a.py",
+                    line_ref="L1",
+                    snippet="+x",
+                    comment="good",
+                    context="code",
+                    sentiment=1,
+                )
+            ],
             [Annotation(context="response", sentiment=-1)],
             [],
         ]
@@ -59,5 +68,3 @@ class TestAnnotationPersistence:
         assert scores[0].response == -1
         assert scores[0].overall == 0
         assert scores[1].overall == 1
-
-

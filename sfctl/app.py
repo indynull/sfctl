@@ -6,6 +6,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.reactive import reactive
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     Collapsible,
@@ -24,7 +25,6 @@ from sfctl import ids, ranking
 from sfctl.commands import NavigationProvider
 from sfctl.config import get_web_url, load_config, update_config
 from sfctl.constants import ARROW_DOWN, ARROW_UP, EM_DASH
-from sfctl.task_types import TaskType, detect_task_type
 from sfctl.ids import (
     Context,
     model_header_id,
@@ -72,7 +72,9 @@ from sfctl.screens import (
     YankCommentModal,
     build_clipboard_text,
 )
+from sfctl.task_types import TaskType, detect_task_type
 from sfctl.widgets import DiffDisplay, LazyCollapsible, trace_event_detail_widgets
+
 
 class StarfleetApp(App):
     TITLE = "Starfleet Control"
@@ -159,11 +161,14 @@ class StarfleetApp(App):
             yield Static(self.rankings_summary(), id=ids.SCOREBOARD)
             if repo and repo != EM_DASH:
                 yield Static(
-                    f"[bold]Repo:[/bold] {repo.replace('[', '(').replace(']', ')')}", id=ids.REPO_BAR
+                    f"[bold]Repo:[/bold] {repo.replace('[', '(').replace(']', ')')}",
+                    id=ids.REPO_BAR,
                 )
-            with Collapsible(title="Prompt", collapsed=False, id=ids.PROMPT_BAR):
-                with ScrollableContainer():
-                    yield Static(RichMarkdown(prompt))
+            with (
+                Collapsible(title="Prompt", collapsed=False, id=ids.PROMPT_BAR),
+                ScrollableContainer(),
+            ):
+                yield Static(RichMarkdown(prompt))
 
         yield Footer()
 
@@ -195,7 +200,9 @@ class StarfleetApp(App):
                 pass  # populated lazily by _populate_overview()
 
     @staticmethod
-    async def _mount_into(collapsible: Collapsible, *widgets: Static | Collapsible | DiffDisplay) -> None:
+    async def _mount_into(
+        collapsible: Collapsible, *widgets: Static | Collapsible | DiffDisplay
+    ) -> None:
         """Mount widgets into a Collapsible's Contents container."""
         contents = collapsible.query_one(Collapsible.Contents)
         await contents.mount_all(widgets)
@@ -262,10 +269,12 @@ class StarfleetApp(App):
         response_pane = TabPane("Response", id=tab_response_id(mid))
         await tabs.add_pane(response_pane)
         summary = self._model_summary_text(m)
-        await response_pane.mount_all([
-            self._vote_bar(idx, "response"),
-            Static(RichMarkdown(summary)),
-        ])
+        await response_pane.mount_all(
+            [
+                self._vote_bar(idx, "response"),
+                Static(RichMarkdown(summary)),
+            ]
+        )
 
         trace_pane = TabPane(f"Trace ({total})", id=tab_trace_id(mid))
         await tabs.add_pane(trace_pane)
@@ -320,14 +329,20 @@ class StarfleetApp(App):
         await tabs.add_pane(current_pane)
         widgets = [
             Static(self.rankings_summary(), id=ids.JUST_RANKINGS),
-            Markdown(self.summary_text or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*", id=ids.JUST_PREVIEW),
+            Markdown(
+                self.summary_text
+                or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*",
+                id=ids.JUST_PREVIEW,
+            ),
         ]
-        widgets.append(TextArea(
-            self.summary_text,
-            language="markdown",
-            show_line_numbers=True,
-            id=ids.JUST_EDITOR,
-        ))
+        widgets.append(
+            TextArea(
+                self.summary_text,
+                language="markdown",
+                show_line_numbers=True,
+                id=ids.JUST_EDITOR,
+            )
+        )
         await current_pane.mount_all(widgets)
         self.query_one(f"#{ids.JUST_EDITOR}").display = False
 
@@ -337,9 +352,7 @@ class StarfleetApp(App):
             for orig_idx in range(len(history) - 1, -1, -1):
                 entry = history[orig_idx]
                 level = entry.get("reviewLevel", "?")
-                changed = orig_idx == 0 or has_meaningful_changes(
-                    history[orig_idx - 1], entry
-                )
+                changed = orig_idx == 0 or has_meaningful_changes(history[orig_idx - 1], entry)
                 entry_fb = feedback_for_entry(history, orig_idx)
 
                 # Skip pure reviews with no feedback (nothing to show)
@@ -350,13 +363,15 @@ class StarfleetApp(App):
                 pane = TabPane(f"L{level} {kind}", id=tab_entry_id(tab_idx))
                 await tabs.add_pane(pane)
 
-                widgets_to_mount = [Static(format_history_entry(entry, orig_idx))]
+                widgets_to_mount: list[Widget] = [Static(format_history_entry(entry, orig_idx))]
 
                 # Feedback new in this entry (inline)
                 for fb in entry_fb:
                     ts = fb.get("timestamp", "")
                     ts_label = format_timestamp(ts) if ts else "unknown"
-                    fb_c = Collapsible(title=f"Feedback | {ts_label}", collapsed=False, classes="inner")
+                    fb_c = Collapsible(
+                        title=f"Feedback | {ts_label}", collapsed=False, classes="inner"
+                    )
                     widgets_to_mount.append(fb_c)
 
                 # Diff from previous entry (only for revisions)
@@ -380,16 +395,12 @@ class StarfleetApp(App):
                         )
                         widgets_to_mount.append(Markdown(just))
                     else:
-                        widgets_to_mount.append(
-                            Static("No justification.", classes="status")
-                        )
+                        widgets_to_mount.append(Static("No justification.", classes="status"))
 
                 await pane.mount_all(widgets_to_mount)
 
                 # Mount feedback message content
-                for fb_c_widget, fb in zip(
-                    pane.query(".inner"), entry_fb, strict=False
-                ):
+                for fb_c_widget, fb in zip(pane.query(".inner"), entry_fb, strict=False):
                     message = fb.get("message", "No message.")
                     await fb_c_widget.query_one(Collapsible.Contents).mount(
                         Static(RichMarkdown(message))
@@ -403,7 +414,10 @@ class StarfleetApp(App):
                         diff_widgets.append(Static("\n".join(ranking_changes)))
                     if just_texts:
                         from redlines import Redlines
-                        diff_widgets.append(Static(Redlines(just_texts[0], just_texts[1]).output_rich))
+
+                        diff_widgets.append(
+                            Static(Redlines(just_texts[0], just_texts[1]).output_rich)
+                        )
                     await diff_c.query_one(Collapsible.Contents).mount_all(diff_widgets)
 
                 tab_idx += 1
@@ -483,7 +497,9 @@ class StarfleetApp(App):
     def _is_on_overview(self) -> bool:
         """True when the overview panel is active in the content switcher."""
         try:
-            return self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher).current == ids.OVERVIEW
+            return bool(
+                self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher).current == ids.OVERVIEW
+            )
         except Exception:
             return False
 
@@ -592,7 +608,8 @@ class StarfleetApp(App):
 
     def _current_model(self) -> ModelData | None:
         if 0 <= self.current_model_index < len(self.models):
-            return self.models[self.current_model_index]
+            model: ModelData = self.models[self.current_model_index]
+            return model
         return None
 
     def action_search_diffs(self) -> None:
@@ -716,7 +733,8 @@ class StarfleetApp(App):
         self.notify("Local annotations and scores reset.")
 
     def _history(self) -> list | dict:
-        return self.data.get("history", [])
+        result: list | dict = self.data.get("history", [])
+        return result
 
     def rankings_summary(self) -> str:
         return ranking.rankings_summary(self.scores, self._history())
@@ -771,7 +789,10 @@ class StarfleetApp(App):
             rankings = self.query_one(f"#{ids.JUST_RANKINGS}", Static)
             rankings.update(self.rankings_summary())
             preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
-            preview.update(self.summary_text or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*")
+            preview.update(
+                self.summary_text
+                or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*"
+            )
         except Exception:
             pass
 
@@ -805,7 +826,10 @@ class StarfleetApp(App):
         if editor.display:
             self._save_summary(editor.text)
             editor.display = False
-            preview.update(self.summary_text or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*")
+            preview.update(
+                self.summary_text
+                or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*"
+            )
             preview.display = True
 
     def on_key(self, event) -> None:
@@ -891,7 +915,8 @@ class StarfleetApp(App):
 
     def action_copy_summary(self) -> None:
         text = build_clipboard_text(
-            self.task_id, self.rankings_summary(),
+            self.task_id,
+            self.rankings_summary(),
             self.summary_text,
         )
         if not text.strip():

@@ -6,6 +6,7 @@ import sys
 
 from sfctl.config import _config_path, load_config, save_config, update_config
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Starfleet Control -- task review and evaluation CLI",

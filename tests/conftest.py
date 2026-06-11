@@ -60,12 +60,13 @@ def minimal_data():
     """Minimal valid data dict for edge-case tests (code review with no models)."""
     return {
         "task": {"taskId": "t-min"},
-        "content": {"content": {"items": [
-            {"type": "collection", "title": "Model Traces", "items": []},
-        ]}},
+        "content": {
+            "content": {
+                "items": [
+                    {"type": "collection", "title": "Model Traces", "items": []},
+                ]
+            }
+        },
         "history": [],
         "feedback": {},
     }
-
-
-

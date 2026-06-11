@@ -335,8 +335,12 @@ class TestFindCookieProfiles:
         cookie_file.touch()
 
         monkeypatch.setattr(
-            api_mod, "_chromium_cookie_patterns",
-            lambda: [("Chrome", "chrome", [str(cookie_file)]), ("Chrome", "chrome", [str(cookie_file)])],
+            api_mod,
+            "_chromium_cookie_patterns",
+            lambda: [
+                ("Chrome", "chrome", [str(cookie_file)]),
+                ("Chrome", "chrome", [str(cookie_file)]),
+            ],
         )
         monkeypatch.setattr(api_mod, "_firefox_cookie_patterns", lambda: [])
         profiles = api_mod.find_cookie_profiles()
@@ -365,11 +369,14 @@ class TestLoadCookies:
             def __init__(self, name, value, domain):
                 self.name, self.value, self.domain = name, value, domain
 
-        self._fake_bc3(monkeypatch, [
-            C("session", "abc", ".teachx.ai"),
-            C("other", "xyz", ".google.com"),
-            C("tracker", None, ".teachx.ai"),
-        ])
+        self._fake_bc3(
+            monkeypatch,
+            [
+                C("session", "abc", ".teachx.ai"),
+                C("other", "xyz", ".google.com"),
+                C("tracker", None, ".teachx.ai"),
+            ],
+        )
         result = api_mod._load_cookies("chrome", "/fake/path")
         assert result == {"session": "abc"}
 
@@ -409,7 +416,8 @@ class TestResolveCookies:
         from sfctl.models import CookieProfile
 
         monkeypatch.setattr(
-            api_mod, "interactive_cookie_setup",
+            api_mod,
+            "interactive_cookie_setup",
             lambda: CookieProfile("/fake", "Chrome", "chrome"),
         )
         monkeypatch.setattr(api_mod, "_load_cookies", lambda fn, cf=None: {"c": "3"})
@@ -447,7 +455,8 @@ class TestInteractiveCookieSetup:
         monkeypatch.setattr(api_mod, "find_cookie_profiles", lambda: profiles)
         monkeypatch.setattr("builtins.input", lambda prompt: "1")
         monkeypatch.setattr(
-            api_mod, "_load_cookies",
+            api_mod,
+            "_load_cookies",
             lambda fn, cf=None: (_ for _ in ()).throw(Exception("fail")),
         )
         result = api_mod.interactive_cookie_setup()

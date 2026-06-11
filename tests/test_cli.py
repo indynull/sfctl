@@ -63,7 +63,15 @@ class TestCli:
         monkeypatch.setattr(StarfleetApp, "run", lambda self: None)
         monkeypatch.setattr(
             "sys.argv",
-            ["sfctl", TASK_ID, "--set", "api_base", "https://test.example.com", "--fixture", str(FIXTURE_PATH)],
+            [
+                "sfctl",
+                TASK_ID,
+                "--set",
+                "api_base",
+                "https://test.example.com",
+                "--fixture",
+                str(FIXTURE_PATH),
+            ],
         )
         cli.main()
         assert config.load_config()["api_base"] == "https://test.example.com"
@@ -141,7 +149,11 @@ class TestCli:
         from sfctl import cli
 
         monkeypatch.setattr(api_mod, "resolve_cookies", lambda cf, v=False: {})
-        monkeypatch.setattr(api_mod, "fetch_data", lambda *a, **kw: (_ for _ in ()).throw(api_mod.AuthError("expired")))
+        monkeypatch.setattr(
+            api_mod,
+            "fetch_data",
+            lambda *a, **kw: (_ for _ in ()).throw(api_mod.AuthError("expired")),
+        )
         monkeypatch.setattr("builtins.input", lambda prompt: "n")
         monkeypatch.setattr("sys.argv", ["sfctl", TASK_ID])
         with pytest.raises(SystemExit):
@@ -165,7 +177,8 @@ class TestCli:
 
         monkeypatch.setattr(api_mod, "fetch_data", fetch_or_fail)
         monkeypatch.setattr(
-            api_mod, "interactive_cookie_setup",
+            api_mod,
+            "interactive_cookie_setup",
             lambda: CookieProfile("/p", "Chrome", "chrome"),
         )
         monkeypatch.setattr(api_mod, "_load_cookies", lambda fn, cf=None: {"c": "v"})

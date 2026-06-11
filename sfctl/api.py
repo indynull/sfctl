@@ -18,6 +18,7 @@ from sfctl.models import (
     TaskResponse,
 )
 
+
 def extract_task_id(task: str) -> str:
     match = re.search(r"(t-[\w]+)", task)
     if not match:
@@ -25,8 +26,10 @@ def extract_task_id(task: str) -> str:
         sys.exit(1)
     return match.group(1)
 
+
 class AuthError(Exception):
     """Raised when the API returns an authentication error."""
+
 
 def _check_response(resp: httpx.Response, label: str) -> None:
     """Raise AuthError on 401/403, or raise for other HTTP errors."""
@@ -37,8 +40,10 @@ def _check_response(resp: httpx.Response, label: str) -> None:
         )
     resp.raise_for_status()
 
+
 _MAX_RETRIES = 3
 _RETRY_STATUSES = frozenset({502, 503, 504})
+
 
 async def _request_with_retry(
     client: httpx.AsyncClient,
@@ -68,6 +73,7 @@ async def _request_with_retry(
     if isinstance(last_exc, httpx.HTTPStatusError):
         _check_response(last_exc.response, label)
     raise last_exc  # type: ignore[misc]
+
 
 async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
     """Fetch all task data concurrently using httpx with retries."""
@@ -113,10 +119,12 @@ async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
 
     return {"task": task_resp, "history": history, "feedback": feedback, "content": content}
 
+
 def fetch_data(task: str, cookies: dict[str, str]) -> dict:
     """Fetch task data, running async requests concurrently under the hood."""
     task_id = extract_task_id(task)
     return asyncio.run(_fetch_data_async(task_id, cookies))
+
 
 def _chromium_cookie_patterns() -> list[tuple[str, str, list[str]]]:
     """Return (label, func_name, glob_patterns) for each Chromium-based browser per OS."""
@@ -159,6 +167,7 @@ def _chromium_cookie_patterns() -> list[tuple[str, str, list[str]]]:
             ("Vivaldi", "vivaldi", ["~/.config/vivaldi/*/Cookies"]),
         ]
 
+
 def _firefox_cookie_patterns() -> list[tuple[str, str, list[str]]]:
     """Return (label, func_name, glob_patterns) for Firefox-based browsers per OS."""
     if sys.platform == "darwin":
@@ -187,6 +196,7 @@ def _firefox_cookie_patterns() -> list[tuple[str, str, list[str]]]:
             ("LibreWolf", "librewolf", ["~/.librewolf/*/cookies.sqlite"]),
         ]
 
+
 def find_cookie_profiles() -> list[CookieProfile]:
     """Discover all browser cookie files across all profiles."""
     import glob
@@ -210,13 +220,16 @@ def find_cookie_profiles() -> list[CookieProfile]:
 
     return profiles
 
+
 _TARGET_HOST = "starfleet-backend.teachx.ai"
+
 
 def _domain_matches(cookie_domain: str, host: str) -> bool:
     """RFC 6265 domain matching: does this cookie belong to the request host?"""
     if cookie_domain.startswith("."):
         return host == cookie_domain[1:] or host.endswith(cookie_domain)
     return cookie_domain == host
+
 
 def _load_cookies(func_name: str, cookie_file: str | None = None) -> dict[str, str]:
     """Load cookies and return a dict filtered to the API host domain."""
@@ -229,6 +242,7 @@ def _load_cookies(func_name: str, cookie_file: str | None = None) -> dict[str, s
         for c in cj
         if c.value is not None and _domain_matches(c.domain, _TARGET_HOST)
     }
+
 
 def interactive_cookie_setup() -> CookieProfile:
     """Interactive first-run: let user pick a browser profile, validate, persist."""
@@ -272,6 +286,7 @@ def interactive_cookie_setup() -> CookieProfile:
     update_config(cookie_file=selected.path, browser=selected.func)
     print(f"Saved to {_config_path()}\n")
     return selected
+
 
 def resolve_cookies(cookie_file_arg: str | None, verbose: bool = False) -> dict[str, str]:
     """Resolve cookies: CLI flag > config > interactive setup. Returns dict for httpx."""

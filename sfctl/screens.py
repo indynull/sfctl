@@ -6,15 +6,16 @@ from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer
+from textual.containers import Container, ScrollableContainer
 from textual.fuzzy import Matcher
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
+from textual.widgets import Input, Label, OptionList, Static, TextArea
 
 from sfctl import ids
 
 if TYPE_CHECKING:
     from sfctl.models import FileDiff
+
 
 class YankCommentModal(ModalScreen[tuple[int, str] | None]):
     """Modal to yank a diff snippet into the justification.
@@ -65,6 +66,7 @@ class YankCommentModal(ModalScreen[tuple[int, str] | None]):
             header += f" {comment}"
         block = f"{header}\n```diff\n{self.snippet}\n```\n"
         self.dismiss((self.model_index, block))
+
 
 class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
     """Scoped file search for the current model's diffs.
@@ -118,6 +120,7 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
         filename = str(event.option.prompt)
         self.dismiss((self.model_index, filename))
 
+
 class HelpModal(ModalScreen):
     """Scrollable modal for help text or tutorial content."""
 
@@ -136,11 +139,13 @@ class HelpModal(ModalScreen):
             with ScrollableContainer():
                 yield Static(self._content)
 
+
 def _strip_markup(text: str) -> str:
     """Remove Rich markup tags from a string."""
     from rich.text import Text
 
     return Text.from_markup(text).plain
+
 
 def build_clipboard_text(
     task_id: str,

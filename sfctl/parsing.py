@@ -5,19 +5,21 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sfctl.constants import EM_DASH
 from sfctl.models import FileDiff, ModelData, ParsedContent
+
 
 def format_timestamp(ts: int | float | str) -> str:
     """Convert a millisecond Unix timestamp to local human-readable time."""
     try:
         ms = int(ts)
-        dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc).astimezone()
+        dt = datetime.fromtimestamp(ms / 1000, tz=UTC).astimezone()
         return dt.strftime("%Y-%m-%d %H:%M")
     except (ValueError, TypeError, OSError):
         return str(ts)
+
 
 def _sanitize(text: str, max_len: int = 200) -> str:
     """Strip newlines, brackets, and truncate for safe use in Rich markup."""
@@ -28,6 +30,7 @@ def _sanitize(text: str, max_len: int = 200) -> str:
         .replace("]", ")")[:max_len]
         .strip()
     )
+
 
 def bump_headings(text: str, parent_level: int = 1) -> str:
     """Makes the shallowest heading become exactly parent_level + 1."""
@@ -44,11 +47,13 @@ def bump_headings(text: str, parent_level: int = 1) -> str:
 
     return re.sub(r"^(#{1,6})(?=\s)", repl, text, flags=re.MULTILINE)
 
+
 def to_label(item_id: str) -> str:
     if not item_id:
         return ""
     cleaned = re.sub(r"^model[_ ]", "", item_id, flags=re.IGNORECASE).strip()
     return cleaned.upper() if len(cleaned) <= 2 else cleaned.title()
+
 
 def rank_color(position: int, total: int) -> str:
     if total <= 1:
@@ -58,6 +63,7 @@ def rank_color(position: int, total: int) -> str:
     if position == total - 1:
         return "red"
     return "yellow"
+
 
 def get_full_ranking(entry: dict, key: str) -> str:
     """Return ranking as 'A > B > C' with rank colors, or empty string if not available."""
@@ -72,6 +78,7 @@ def get_full_ranking(entry: dict, key: str) -> str:
         f"[{rank_color(i, len(labels))}]{_sanitize(label)}[/]" for i, label in enumerate(labels)
     ]
     return " > ".join(parts)
+
 
 def build_diff_line_map(diff_text: str) -> dict[int, int]:
     """Map diff-text line indices to real source line numbers.
@@ -113,6 +120,7 @@ def build_diff_line_map(diff_text: str) -> dict[int, int]:
 
     return line_map
 
+
 def diff_line_ref(diff_text: str, sel_start: int, sel_end: int) -> str:
     """Map TextArea selection (0-based line indices) to real source line numbers."""
     line_map = build_diff_line_map(diff_text)
@@ -123,10 +131,22 @@ def diff_line_ref(diff_text: str, sel_start: int, sel_end: int) -> str:
         return f"L{start}"
     return f"L{min(start, end)}-L{max(start, end)}"
 
-_PREAMBLE_PREFIXES = ("diff --git ", "diff ", "index ", "old mode ", "new mode ",
-                      "new file mode ", "deleted file mode ",
-                      "similarity index ", "rename from ", "rename to ",
-                      "--- ", "+++ ")
+
+_PREAMBLE_PREFIXES = (
+    "diff --git ",
+    "diff ",
+    "index ",
+    "old mode ",
+    "new mode ",
+    "new file mode ",
+    "deleted file mode ",
+    "similarity index ",
+    "rename from ",
+    "rename to ",
+    "--- ",
+    "+++ ",
+)
+
 
 def strip_diff_preamble(diff_text: str) -> str:
     """Remove git diff preamble lines, keeping only hunk headers and content."""
@@ -142,6 +162,7 @@ def strip_diff_preamble(diff_text: str) -> str:
     while out and not out[-1].strip():
         out.pop()
     return "\n".join(out)
+
 
 def extract_file_diffs(diff_text: str) -> list[FileDiff]:
     """Split a multi-file unified diff into per-file blocks."""
@@ -169,14 +190,17 @@ def extract_file_diffs(diff_text: str) -> list[FileDiff]:
         files.append(FileDiff(filename=fname, diff=strip_diff_preamble(block)))
     return files
 
+
 def _parse_json_field(v: str | None) -> list:
     """Parse an embedded JSON string into a list."""
     if not v:
         return []
     try:
-        return json.loads(v)
+        result: list = json.loads(v)
+        return result
     except (json.JSONDecodeError, ValueError):
         return []
+
 
 def parse_content(blob: dict) -> ParsedContent:
     items = blob.get("content", {}).get("items", [])
@@ -212,8 +236,10 @@ def parse_content(blob: dict) -> ParsedContent:
         models=models,
     )
 
+
 def clean_event_name(name: str) -> str:
     return name.replace("__sf", "").replace("tool_event", "").strip("_") or "unknown"
+
 
 _TRACE_COLORS = [
     "#5f87ff",
@@ -228,14 +254,17 @@ _TRACE_COLORS = [
     "#af8700",
 ]
 
+
 def trace_type_color(index: int) -> str:
     return _TRACE_COLORS[index % len(_TRACE_COLORS)]
+
 
 def group_events(model: ModelData) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for e in model.tool_events:
         grouped[clean_event_name(str(e.get("name", "")))].append(e)
     return dict(grouped)
+
 
 def format_event_line(ev: dict) -> str:
     name = _sanitize(clean_event_name(str(ev.get("name", ""))))
@@ -248,12 +277,16 @@ def format_event_line(ev: dict) -> str:
         parts.append(f"[dim]{wall_time}ms[/]")
     return "  ".join(parts)
 
+
 def _ranking_label(entry: dict, key: str) -> str:
     """Extract a ranking as 'A > B > C' from a history entry."""
     ranking = entry.get(key) or {}
     value = ranking.get("value") or []
-    labels = [to_label(item.get("id", "")) for item in value if isinstance(item, dict) and item.get("id")]
+    labels = [
+        to_label(item.get("id", "")) for item in value if isinstance(item, dict) and item.get("id")
+    ]
     return " > ".join(labels) if labels else ""
+
 
 def format_history_entry(entry: dict, index: int, show_email: bool = False) -> str:
     """Format a history entry's metadata as Rich markup (no justification)."""
@@ -278,9 +311,11 @@ def format_history_entry(entry: dict, index: int, show_email: bool = False) -> s
 
     return "\n".join(lines)
 
+
 def history_justification(entry: dict) -> str:
     """Extract the justification text from a history entry."""
     return _justification_value(entry).strip()
+
 
 def history_ranking_changes(prev: dict, curr: dict) -> list[str]:
     """Return Rich-markup lines showing old and new rankings with rank colors."""
@@ -309,10 +344,12 @@ def history_ranking_changes(prev: dict, curr: dict) -> list[str]:
 
     return lines
 
+
 def _justification_value(entry: dict) -> str:
     """Extract the justification string from a history entry."""
     val = (entry.get("justification") or {}).get("value", "")
     return val if isinstance(val, str) else ""
+
 
 def history_justification_texts(prev: dict, curr: dict) -> tuple[str, str] | None:
     """Return (old, new) justification texts if they differ, else None."""
@@ -322,13 +359,14 @@ def history_justification_texts(prev: dict, curr: dict) -> tuple[str, str] | Non
         return None
     return (old_just, new_just)
 
+
 def feedback_for_entry(history: list, index: int) -> list[dict]:
     """Return feedback entries that are new in history[index] vs history[index-1].
 
     Feedback accumulates across history entries, so each entry contains all
     previous feedback plus any new ones. This returns only the new ones.
     """
-    curr_fb = (history[index].get("feedback") or {}).get("entries", [])
+    curr_fb: list[dict] = (history[index].get("feedback") or {}).get("entries", [])
     if index == 0:
         return curr_fb
 
@@ -337,6 +375,7 @@ def feedback_for_entry(history: list, index: int) -> list[dict]:
         for fb in (history[index - 1].get("feedback") or {}).get("entries", [])
     }
     return [fb for fb in curr_fb if str(fb.get("timestamp", "")) not in prev_timestamps]
+
 
 def has_meaningful_changes(prev: dict, curr: dict) -> bool:
     """Check if a history entry has any actual changes from the previous."""

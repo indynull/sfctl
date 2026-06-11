@@ -14,12 +14,12 @@ from textual.strip import Strip
 from textual.widgets import Collapsible, Static, TextArea
 
 from sfctl.constants import ARROW_DOWN, ARROW_RIGHT, ARROW_UP
-from sfctl.ids import Context
 from sfctl.parsing import _sanitize, build_diff_line_map
 
 _STYLE_HUNK = Style(color="cyan", bold=True)
 _STYLE_INSERTED = Style(color="green")
 _STYLE_DELETED = Style(color="red")
+
 
 def _build_line_styles(text: str) -> list[Style]:
     """Compute a style for each line of a unified diff based on its prefix."""
@@ -34,6 +34,7 @@ def _build_line_styles(text: str) -> list[Style]:
         else:
             styles.append(Style.null())
     return styles
+
 
 class DiffDisplay(TextArea):
     """Read-only TextArea for diffs with syntax highlighting and text selection."""
@@ -120,6 +121,7 @@ class DiffDisplay(TextArea):
                 strip = Strip(new_segments, strip.cell_length)
         return strip
 
+
 @dataclass
 class _LazyPayload:
     """Metadata for lazy-loaded content in a Collapsible."""
@@ -129,6 +131,7 @@ class _LazyPayload:
     letter: str = ""
     filename: str = ""
     events: list = field(default_factory=list)
+
 
 class LazyCollapsible(Collapsible):
     """A Collapsible that carries lazy-load metadata without ad-hoc attributes."""
@@ -154,6 +157,7 @@ class LazyCollapsible(Collapsible):
             lazy=_LazyPayload(events=events),
             **kwargs,
         )
+
 
 def _format_value(v: object, max_len: int = 120) -> str:
     """Format a single value for display, truncating long strings."""
@@ -182,6 +186,7 @@ def _format_value(v: object, max_len: int = 120) -> str:
         return f"[dim]{items}{suffix}[/]"
     return f"[dim]{_sanitize(str(v), max_len)}[/]"
 
+
 def _try_parse(v: object) -> object:
     """If v is a JSON string, parse it into a dict/list."""
     if isinstance(v, str):
@@ -192,6 +197,7 @@ def _try_parse(v: object) -> object:
         except (json.JSONDecodeError, ValueError):
             pass
     return v
+
 
 def trace_event_detail_widgets(ev: dict) -> list[Static]:
     """Build detail widgets for a trace event's args and response/output."""

@@ -9,17 +9,22 @@ from pathlib import Path
 from sfctl.config import data_dir
 from sfctl.models import Annotation, ModelScores
 
+
 def _safe_task_id(task_id: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", task_id)
+
 
 def scores_path(task_id: str) -> Path:
     return data_dir() / f"{_safe_task_id(task_id)}_scores.json"
 
+
 def justification_path(task_id: str) -> Path:
     return data_dir() / f"{_safe_task_id(task_id)}.md"
 
+
 def annotations_path(task_id: str) -> Path:
     return data_dir() / f"{_safe_task_id(task_id)}_annotations.json"
+
 
 def scores_from_annotations(annotations: list[list[Annotation]]) -> list[ModelScores]:
     """Compute ModelScores per model from structured annotations."""
@@ -31,6 +36,7 @@ def scores_from_annotations(annotations: list[list[Annotation]]) -> list[ModelSc
             setattr(s, ctx, getattr(s, ctx) + a.sentiment)
         scores.append(s)
     return scores
+
 
 def _migrate_legacy(task_id: str, num_models: int) -> tuple[list[list[Annotation]], str]:
     """Read old _scores.json + .md and convert to annotations + summary."""
@@ -56,6 +62,7 @@ def _migrate_legacy(task_id: str, num_models: int) -> tuple[list[list[Annotation
     if jp.exists():
         summary = jp.read_text(encoding="utf-8")
     return annotations, summary
+
 
 def load_annotations(
     task_id: str, num_models: int, history: list | None = None
@@ -99,9 +106,8 @@ def load_annotations(
                 summary = last_just
     return [[] for _ in range(num_models)], summary
 
-def save_annotations(
-    task_id: str, annotations: list[list[Annotation]], summary: str
-) -> None:
+
+def save_annotations(task_id: str, annotations: list[list[Annotation]], summary: str) -> None:
     """Persist annotations and summary to disk."""
     data: dict = {}
     for i, model_anns in enumerate(annotations):

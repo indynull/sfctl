@@ -251,10 +251,13 @@ class TestRankingsUI:
     async def test_rankings_local_only(self):
         from sfctl.app import StarfleetApp
 
-        data = _task_data("t-lo", models=[
-            _model_item("Model A"),
-            _model_item("Model B"),
-        ])
+        data = _task_data(
+            "t-lo",
+            models=[
+                _model_item("Model A"),
+                _model_item("Model B"),
+            ],
+        )
         app = StarfleetApp("t-lo", data)
         async with app.run_test() as pilot:
             await pilot.press("1")
@@ -673,10 +676,16 @@ class TestHistoryOrder:
 
         data = _task_data("t-dup", models=[_model_item("Model A")])
         data["history"] = [
-            {"reviewLevel": 0, "justification": {"value": "same"},
-             "preference_ranking": {"value": [{"id": "model_a"}]}},
-            {"reviewLevel": 1, "justification": {"value": "same"},
-             "preference_ranking": {"value": [{"id": "model_a"}]}},
+            {
+                "reviewLevel": 0,
+                "justification": {"value": "same"},
+                "preference_ranking": {"value": [{"id": "model_a"}]},
+            },
+            {
+                "reviewLevel": 1,
+                "justification": {"value": "same"},
+                "preference_ranking": {"value": [{"id": "model_a"}]},
+            },
         ]
         app = StarfleetApp("t-dup", data)
         async with app.run_test() as pilot:
@@ -696,13 +705,21 @@ class TestHistoryOrder:
 
         data = _task_data("t-rev", models=[_model_item("Model A")])
         data["history"] = [
-            {"reviewLevel": 0, "justification": {"value": "same"},
-             "preference_ranking": {"value": [{"id": "model_a"}]}},
-            {"reviewLevel": 1, "justification": {"value": "same"},
-             "preference_ranking": {"value": [{"id": "model_a"}]},
-             "feedback": {"entries": [
-                 {"reviewLevel": 1, "message": "needs work", "timestamp": 1, "email": "r@x"},
-             ]}},
+            {
+                "reviewLevel": 0,
+                "justification": {"value": "same"},
+                "preference_ranking": {"value": [{"id": "model_a"}]},
+            },
+            {
+                "reviewLevel": 1,
+                "justification": {"value": "same"},
+                "preference_ranking": {"value": [{"id": "model_a"}]},
+                "feedback": {
+                    "entries": [
+                        {"reviewLevel": 1, "message": "needs work", "timestamp": 1, "email": "r@x"},
+                    ]
+                },
+            },
         ]
         app = StarfleetApp("t-rev", data)
         async with app.run_test() as pilot:
@@ -727,10 +744,21 @@ class TestHistoryOrder:
         data = _task_data("t-fb", models=[_model_item("Model A")])
         data["history"] = [
             {"email": "a@b", "reviewLevel": 0, "justification": {"value": "text"}},
-            {"email": "c@d", "reviewLevel": 1, "justification": {"value": "updated"},
-             "feedback": {"entries": [
-                 {"reviewLevel": 1, "message": "good work", "timestamp": 123, "email": "rev@x"},
-             ]}},
+            {
+                "email": "c@d",
+                "reviewLevel": 1,
+                "justification": {"value": "updated"},
+                "feedback": {
+                    "entries": [
+                        {
+                            "reviewLevel": 1,
+                            "message": "good work",
+                            "timestamp": 123,
+                            "email": "rev@x",
+                        },
+                    ]
+                },
+            },
         ]
         app = StarfleetApp("t-fb", data)
         async with app.run_test() as pilot:
@@ -792,7 +820,9 @@ class TestModelVariants:
             "task": {"taskId": "t-x"},
             "content": {"content": {"items": []}},
             "history": {"preference_ranking": {"value": []}},
-            "feedback": {"entries": [{"timestamp": 1, "message": "hi", "email": "a@b", "reviewLevel": 1}]},
+            "feedback": {
+                "entries": [{"timestamp": 1, "message": "hi", "email": "a@b", "reviewLevel": 1}]
+            },
         }
         app = StarfleetApp("t-x", data)
         async with app.run_test():
@@ -848,7 +878,12 @@ class TestMiscActions:
     async def test_copy_summary_empty(self):
         from sfctl.app import StarfleetApp
 
-        data = {"task": {"taskId": ""}, "content": {"content": {"items": []}}, "history": [], "feedback": {}}
+        data = {
+            "task": {"taskId": ""},
+            "content": {"content": {"items": []}},
+            "history": [],
+            "feedback": {},
+        }
         app = StarfleetApp("", data)
         async with app.run_test() as pilot:
             import sfctl.screens as screens_mod
@@ -940,9 +975,13 @@ class TestTaskTypeDetection:
 
         data = {
             "task": {"taskId": "t-unk2"},
-            "content": {"content": {"items": [
-                {"type": "text", "title": "Some Field", "text": "value"},
-            ]}},
+            "content": {
+                "content": {
+                    "items": [
+                        {"type": "text", "title": "Some Field", "text": "value"},
+                    ]
+                }
+            },
             "history": [],
             "feedback": {},
         }
@@ -1040,7 +1079,8 @@ class TestBuildClipboardText:
 
         app = StarfleetApp(TASK_ID, fixture_data)
         text = build_clipboard_text(
-            app.task_id, app.rankings_summary(),
+            app.task_id,
+            app.rankings_summary(),
             app.summary_text,
         )
         assert TASK_ID in text

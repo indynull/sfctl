@@ -174,7 +174,9 @@ class TestRankingsSummary:
 class TestModelSummaryText:
     def test_from_messages(self):
         m = ModelData(
-            name="A", diff="", trace_summary="trace",
+            name="A",
+            diff="",
+            trace_summary="trace",
             messages=[{"role": "assistant", "content": "# Hello"}],
             tool_events=[],
         )
@@ -183,16 +185,22 @@ class TestModelSummaryText:
 
     def test_from_trace_summary(self):
         m = ModelData(
-            name="A", diff="", trace_summary="trace fallback",
-            messages=[], tool_events=[],
+            name="A",
+            diff="",
+            trace_summary="trace fallback",
+            messages=[],
+            tool_events=[],
         )
         result = model_summary_text(m)
         assert "trace fallback" in result
 
     def test_no_content(self):
         m = ModelData(
-            name="A", diff="", trace_summary=None,
-            messages=[], tool_events=[],
+            name="A",
+            diff="",
+            trace_summary=None,
+            messages=[],
+            tool_events=[],
         )
         result = model_summary_text(m)
         assert "No summary" in result

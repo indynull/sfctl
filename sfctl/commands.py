@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 
+
 class NavigationProvider(Provider):
     """Command palette provider for view navigation and theme switching."""
 
@@ -18,12 +19,14 @@ class NavigationProvider(Provider):
             items.append((label, lambda sid=section_id: app.run_worker(app.go_to(sid))))
         for label, mi, fn in app.diff_items():
             items.append((label, lambda m=mi, f=fn: app.run_worker(app.go_to_diff(m, f))))
-        items.extend([
-            ("Justification: Edit", lambda: app.run_worker(app.action_edit_justification())),
-            ("Refresh Data", lambda: app.action_refresh_data()),
-            ("Reset: Clear Local Scores & Justification", lambda: app.action_reset_local()),
-            ("Help: Show Shortcuts", lambda: app.action_help()),
-        ])
+        items.extend(
+            [
+                ("Justification: Edit", lambda: app.run_worker(app.action_edit_justification())),
+                ("Refresh Data", lambda: app.action_refresh_data()),
+                ("Reset: Clear Local Scores & Justification", lambda: app.action_reset_local()),
+                ("Help: Show Shortcuts", lambda: app.action_help()),
+            ]
+        )
         for theme_name in app.available_themes:
             items.append((f"Theme: {theme_name}", lambda t=theme_name: app.set_theme(t)))
         return items

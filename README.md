@@ -66,33 +66,6 @@ This is useful for offline development or testing UI changes without auth.
 
 The command palette (`ctrl+\`) provides fuzzy search across views, diffs, actions, and themes.
 
-## Architecture
-
-```
-sfctl/
-  api.py          async httpx client, cookie discovery, auth error handling
-  app.py          main Textual app, keybindings, model switching
-  cli.py          CLI entry point, --fixture / --set / --clear-config / --dump
-  commands.py     command palette provider
-  config.py       platformdirs-based config/data persistence
-  ids.py          widget IDs, CSS classes, enums (Context)
-  models.py       Pydantic models (API) + dataclasses (app state)
-  parsing.py      content parsing, diff extraction, trace formatting
-  ranking.py      pure ranking computation and model identification
-  scoring.py      annotation persistence and legacy migration
-  screens.py      modal screens (yank, file search, help)
-  task_types.py   task type detection from API data
-  widgets.py      DiffDisplay (syntax highlighting), LazyCollapsible, trace widgets
-```
-
-## Development
-
-```
-git clone git@github.com:sfctl/sfctl.git
-cd sfctl
-uv sync --group dev
-```
-
 ### Run tests
 
 ```
@@ -107,4 +80,3 @@ uv run ruff format sfctl/ tests/
 uv run mypy sfctl/
 ```
 
-Requires Python 3.14+.

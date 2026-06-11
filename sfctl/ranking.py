@@ -9,6 +9,7 @@ from sfctl.ids import model_id, model_letter
 from sfctl.models import ModelData, ModelScores
 from sfctl.parsing import bump_headings, get_full_ranking, rank_color
 
+
 def nav_items(models: list[ModelData]) -> list[tuple[str, str]]:
     items: list[tuple[str, str]] = []
     for i in range(len(models)):
@@ -16,12 +17,14 @@ def nav_items(models: list[ModelData]) -> list[tuple[str, str]]:
     items.append(("Overview", "overview"))
     return items
 
+
 def diff_items(models: list[ModelData]) -> list[tuple[str, int, str]]:
     items: list[tuple[str, int, str]] = []
     for i, m in enumerate(models):
         for fd in m.file_diffs:
             items.append((f"Diff: {model_letter(i)} / {fd.filename}", i, fd.filename))
     return items
+
 
 def ranking_for_category(scores: list[ModelScores], category: str) -> str:
     scored = [(i, getattr(scores[i], category)) for i in range(len(scores))]
@@ -35,6 +38,7 @@ def ranking_for_category(scores: list[ModelScores], category: str) -> str:
         parts.append(f"[{color}]{model_letter(i)}({sign})[/]")
     return " > ".join(parts)
 
+
 def model_rank(scores: list[ModelScores], index: int) -> int:
     totals = sorted(
         [(i, scores[i].total()) for i in range(len(scores))],
@@ -45,10 +49,12 @@ def model_rank(scores: list[ModelScores], index: int) -> int:
             return rank
     return 0
 
+
 def _normalize_history(history: list | dict) -> list:
     if not isinstance(history, list):
         return [history]
     return history
+
 
 def previous_ranking_summary(history: list | dict) -> str:
     history = _normalize_history(history)
@@ -64,6 +70,7 @@ def previous_ranking_summary(history: list | dict) -> str:
             sections.append(f"[bold]{label}:[/bold] {ranking}")
     return "  |  ".join(sections)
 
+
 def local_ranking_summary(scores: list[ModelScores]) -> str:
     sections = []
     for cat, label in [("overall", "Overall"), ("response", "Resp"), ("code", "Code")]:
@@ -71,6 +78,7 @@ def local_ranking_summary(scores: list[ModelScores]) -> str:
         if ranking:
             sections.append(f"[bold]{label}:[/bold] {ranking}")
     return "  |  ".join(sections)
+
 
 def rankings_summary(scores: list[ModelScores], history: list | dict) -> str:
     local = local_ranking_summary(scores)
@@ -82,6 +90,7 @@ def rankings_summary(scores: list[ModelScores], history: list | dict) -> str:
     if local:
         return local
     return ""
+
 
 def previous_model_rank(history: list | dict, index: int) -> int | None:
     """Get the rank for a model from the most recent history entry (preference ranking)."""
@@ -96,9 +105,8 @@ def previous_model_rank(history: list | dict, index: int) -> int | None:
                 return rank
     return None
 
+
 def model_summary_text(m: ModelData) -> str:
     messages = m.messages or [{}]
-    raw = (
-        (messages[-1].get("content") if messages else None) or m.trace_summary or "_No summary_"
-    )
+    raw = (messages[-1].get("content") if messages else None) or m.trace_summary or "_No summary_"
     return bump_headings(raw, 4)
