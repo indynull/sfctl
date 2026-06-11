@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sftui"]
+
+[project]
+name = "sftui"
+version = "0.1.0"
+description = "Starfleet Preference Task Viewer TUI"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "browser-cookie3>=0.20.1",
+    "httpx>=0.28",
+    "pydantic>=2.13.4",
+    "textual>=8.2.7",
+]
+
+[project.scripts]
+sftui = "sftui.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.16",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",    # line length - handled by formatter
+    "W291",    # trailing whitespace in markdown f-strings is intentional (line breaks)
+    "RUF012",  # mutable ClassVar - Textual convention for BINDINGS/CSS/etc.
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "browser_cookie3"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pygments.*"
+ignore_missing_imports = true
