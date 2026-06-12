@@ -9,12 +9,64 @@ from threading import Thread
 from rich.segment import Segment
 from rich.style import Style
 from textual.binding import Binding
+from textual.events import MouseDown, MouseMove, MouseUp
 from textual.message import Message
 from textual.strip import Strip
+from textual.widget import Widget
 from textual.widgets import Collapsible, Static, TextArea
 
 from sfctl.constants import ARROW_DOWN, ARROW_RIGHT, ARROW_UP
 from sfctl.parsing import _sanitize, build_diff_line_map
+
+
+class SplitHandle(Widget):
+    """Horizontal draggable handle for resizing top/bottom panels."""
+
+    DEFAULT_CSS = "SplitHandle { height: 1; }"
+
+    def __init__(self, top_id: str, bottom_id: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._top_id = top_id
+        self._bottom_id = bottom_id
+        self._dragging = False
+        self._start_y = 0
+        self._start_fraction = 0.5
+
+    def render_line(self, y: int) -> Strip:
+        return Strip([Segment("─" * self.size.width, self.rich_style)])
+
+    def on_mouse_down(self, event: MouseDown) -> None:
+        self._dragging = True
+        self.capture_mouse()
+        self._start_y = event.screen_y
+        parent = self.parent
+        if parent:
+            top = parent.query_one(f"#{self._top_id}")
+            bottom = parent.query_one(f"#{self._bottom_id}")
+            total = top.size.height + bottom.size.height
+            if total > 0:
+                self._start_fraction = top.size.height / total
+
+    def on_mouse_up(self, event: MouseUp) -> None:
+        self._dragging = False
+        self.release_mouse()
+
+    def on_mouse_move(self, event: MouseMove) -> None:
+        if not self._dragging:
+            return
+        parent = self.parent
+        if not parent:
+            return
+        top = parent.query_one(f"#{self._top_id}")
+        bottom = parent.query_one(f"#{self._bottom_id}")
+        total = top.size.height + bottom.size.height
+        if total <= 0:
+            return
+        delta = event.screen_y - self._start_y
+        frac = self._start_fraction + (delta / total)
+        frac = max(0.1, min(0.9, frac))
+        top.styles.height = f"{round(frac * 100)}fr"
+        bottom.styles.height = f"{round((1 - frac) * 100)}fr"
 
 _STYLE_HUNK = Style(color="cyan", bold=True)
 _STYLE_INSERTED = Style(color="green")

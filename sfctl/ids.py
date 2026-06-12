@@ -28,6 +28,9 @@ YANK_MODAL = "yank-comment-modal"
 YANK_PREVIEW = "yank-preview"
 YANK_COMMENT = "yank-comment"
 
+SPLIT_HANDLE = "split-handle"
+CONTENT_AREA = "content-area"
+
 PROPOSAL_TOP_TABS = "proposal-top-tabs"
 
 DIFF_SEARCH_MODAL = "diff-search-modal"
@@ -38,13 +41,7 @@ EVENT_SEARCH_MODAL = "event-search-modal"
 EVENT_SEARCH_INPUT = "event-search-input"
 EVENT_SEARCH_LIST = "event-search-list"
 
-GREP_DIFFS_MODAL = "grep-diffs-modal"
-GREP_DIFFS_INPUT = "grep-diffs-input"
-GREP_DIFFS_LIST = "grep-diffs-list"
 
-GREP_EVENTS_MODAL = "grep-events-modal"
-GREP_EVENTS_INPUT = "grep-events-input"
-GREP_EVENTS_LIST = "grep-events-list"
 
 
 def model_letter(index: int) -> str:

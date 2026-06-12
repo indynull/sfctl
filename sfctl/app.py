@@ -74,14 +74,12 @@ from sfctl.scoring import (
 from sfctl.screens import (
     DiffSearchModal,
     EventSearchModal,
-    GrepDiffsModal,
-    GrepEventsModal,
     HelpModal,
     YankCommentModal,
     build_clipboard_text,
 )
 from sfctl.task_types import TaskType, detect_task_type
-from sfctl.widgets import DiffDisplay, LazyCollapsible, trace_event_detail_widgets
+from sfctl.widgets import DiffDisplay, LazyCollapsible, SplitHandle, trace_event_detail_widgets
 
 
 class StarfleetApp(App):
@@ -113,8 +111,7 @@ class StarfleetApp(App):
         Binding("-", "vote_down", f"{ARROW_DOWN} Down", show=True),
         Binding("ctrl+f", "search_diffs", "Find File", show=True),
         Binding("ctrl+g", "search_events", "Find Event", show=True),
-        Binding("ctrl+shift+f", "grep_diffs", "Grep Diffs"),
-        Binding("ctrl+shift+g", "grep_events", "Grep Events"),
+
         Binding("c", "copy_summary", "Copy", show=True),
         Binding("e", "toggle_collapse", "Fold", show=True),
         Binding("?", "help", "Help", show=True),
@@ -208,13 +205,19 @@ class StarfleetApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield from self._compose_info_bar()
+        yield SplitHandle(ids.INFO_BAR, ids.CONTENT_AREA, id=ids.SPLIT_HANDLE)
+        yield from self._compose_content_area()
         yield Footer()
 
+    def _compose_content_area(self) -> ComposeResult:
         self._populated_models = set()
         self._overview_populated = False
 
         if self.task_type == TaskType.UNKNOWN:
-            with ScrollableContainer(id=ids.OVERVIEW):
+            with (
+                ScrollableContainer(id=ids.CONTENT_AREA),
+                ScrollableContainer(id=ids.OVERVIEW),
+            ):
                 yield Static(
                     "[bold]Unsupported task type[/bold]\n\n"
                     "This task does not match a known layout. "
@@ -224,24 +227,30 @@ class StarfleetApp(App):
             return
 
         if self.task_type == TaskType.PROJECT_PROPOSAL:
-            with ContentSwitcher(initial=ids.OVERVIEW, id=ids.MAIN_SWITCHER), \
-                 ScrollableContainer(id=ids.OVERVIEW):
+            with (
+                Vertical(id=ids.CONTENT_AREA, classes="proposal"),
+                ContentSwitcher(initial=ids.OVERVIEW, id=ids.MAIN_SWITCHER),
+                ScrollableContainer(id=ids.OVERVIEW),
+            ):
                 pass
             return
 
         initial = model_id(0) if self.models else ids.OVERVIEW
-        with ContentSwitcher(initial=initial, id=ids.MAIN_SWITCHER):
-            for idx in range(len(self.models)):
-                mid = model_id(idx)
-                with ScrollableContainer(id=mid):
-                    yield Static(
-                        f"[bold]{model_letter(idx)}[/bold]",
-                        classes="view-header",
-                        id=model_header_id(mid),
-                    )
+        with (
+            Vertical(id=ids.CONTENT_AREA),
+            ContentSwitcher(initial=initial, id=ids.MAIN_SWITCHER),
+        ):
+                for idx in range(len(self.models)):
+                    mid = model_id(idx)
+                    with ScrollableContainer(id=mid):
+                        yield Static(
+                            f"[bold]{model_letter(idx)}[/bold]",
+                            classes="view-header",
+                            id=model_header_id(mid),
+                        )
 
-            with ScrollableContainer(id=ids.OVERVIEW):
-                pass
+                with ScrollableContainer(id=ids.OVERVIEW):
+                    pass
 
     @staticmethod
     async def _mount_into(
@@ -914,56 +923,7 @@ class StarfleetApp(App):
             target.collapsed = False
             self.call_later(lambda t=target: t.scroll_visible())
 
-    def action_grep_diffs(self) -> None:
-        if self.task_type == TaskType.PROJECT_PROPOSAL:
-            file_diffs = self.proposal.file_diffs if self.proposal else []
-            model_index = 0
-        else:
-            m = self._current_model()
-            if not m:
-                self.notify("Navigate to a model first.", severity="warning")
-                return
-            file_diffs = m.file_diffs
-            model_index = self.current_model_index
-        if not file_diffs:
-            self.notify("No diffs to search.", severity="warning")
-            return
 
-        async def _on_result(result: tuple[int, str] | None) -> None:
-            if not result:
-                return
-            if self.task_type == TaskType.PROJECT_PROPOSAL:
-                top_tabs = self.query_one(f"#{ids.PROPOSAL_TOP_TABS}", TabbedContent)
-                for pane in top_tabs.query(TabPane):
-                    if str(top_tabs.get_tab(pane).label).startswith("Diffs"):
-                        top_tabs.active = str(pane.id)
-                        for collapsible in pane.query(Collapsible):
-                            if str(collapsible.title) == result[1]:
-                                collapsible.collapsed = False
-                                break
-                        break
-            else:
-                await self.go_to_diff(result[0], result[1])
-
-        self.push_screen(GrepDiffsModal(model_index, file_diffs), _on_result)
-
-    def action_grep_events(self) -> None:
-        if self.task_type == TaskType.PROJECT_PROPOSAL:
-            events = self.proposal.tool_events if self.proposal else []
-        else:
-            m = self._current_model()
-            events = m.tool_events if m else []
-        dict_events = [e for e in events if isinstance(e, dict)]
-        if not dict_events:
-            self.notify("No trace events.", severity="warning")
-            return
-
-        async def _on_result(event_index: int | None) -> None:
-            if event_index is None:
-                return
-            await self._expand_trace_event(event_index, dict_events)
-
-        self.push_screen(GrepEventsModal(dict_events), _on_result)
 
     def action_yank_file(self) -> None:
         focused = self.focused
@@ -1185,9 +1145,11 @@ class StarfleetApp(App):
         "[bold]Review[/bold]\n"
         "  +/-        vote (diff=code, response=response, else=overall)\n"
         "  y          yank diff snippet into justification\n\n"
+        "[bold]Search[/bold]\n"
+        "  ctrl+f     search files (repeat to toggle fuzzy/grep)\n"
+        "  ctrl+g     search events (repeat to toggle fuzzy/grep)\n\n"
         "[bold]Actions[/bold]\n"
         "  ctrl+e     edit summary\n"
-        "  ctrl+f     fuzzy file search in current model\n"
         "  c          copy review to clipboard\n"
         "  r          refresh data from API\n"
         "  ctrl+r     reset local annotations and scores\n"

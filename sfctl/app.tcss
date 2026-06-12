@@ -39,9 +39,15 @@ DiffDisplay { height: auto; max-height: 50; }
 .trace-t8, .trace-t8 > CollapsibleTitle { color: #00af87; }
 .trace-t9, .trace-t9 > CollapsibleTitle { color: #af8700; }
 
-/* Fixed info bar */
-#info-bar           { dock: top; height: 20%; background: $surface; }
-#info-bar.proposal  { height: 40%; }
+/* Info bar + content split */
+#info-bar           { height: 20fr; background: $surface; border-bottom: hkey $primary 40%; overflow-y: auto; }
+#info-bar.proposal  { height: 40fr; }
+#content-area           { height: 80fr; }
+#content-area.proposal  { height: 60fr; }
+
+/* Split handle */
+SplitHandle { color: $primary 40%; }
+SplitHandle:hover { color: $accent; }
 #task-bar   { height: auto; padding: 0 1; color: $accent; background: $panel; }
 #scoreboard { height: auto; padding: 0 1; color: $text; background: $panel; }
 #repo-bar   { height: auto; padding: 0 1; color: $text-muted; }
@@ -73,14 +79,7 @@ EventSearchModal    { align: center top; background: $background 60%; }
 #event-search-modal { width: 60%; height: auto; max-height: 40%; border: tall $primary; background: $panel; padding: 1 2; margin: 2 0 0 0; }
 #event-search-list  { height: auto; max-height: 16; margin: 1 0 0 0; }
 
-/* Content grep modals */
-GrepDiffsModal     { align: center top; background: $background 60%; }
-#grep-diffs-modal  { width: 70%; height: auto; max-height: 50%; border: tall $accent; background: $panel; padding: 1 2; margin: 2 0 0 0; }
-#grep-diffs-list   { height: auto; max-height: 20; margin: 1 0 0 0; }
 
-GrepEventsModal    { align: center top; background: $background 60%; }
-#grep-events-modal { width: 70%; height: auto; max-height: 50%; border: tall $accent; background: $panel; padding: 1 2; margin: 2 0 0 0; }
-#grep-events-list  { height: auto; max-height: 20; margin: 1 0 0 0; }
 
 /* Help modal */
 HelpModal    { align: center middle; background: $background 60%; }
