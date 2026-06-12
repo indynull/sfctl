@@ -1101,3 +1101,74 @@ class TestStripMarkup:
         from sfctl.screens import _strip_markup
 
         assert _strip_markup("[green]A(+3)[/]") == "A(+3)"
+
+
+class TestProposalApp:
+    @pytest.mark.asyncio
+    async def test_proposal_detected(self, proposal_data):
+        from sfctl.app import StarfleetApp
+        from sfctl.task_types import TaskType
+
+        app = StarfleetApp("t-PROP001", proposal_data)
+        assert app.task_type == TaskType.PROJECT_PROPOSAL
+        assert app.proposal is not None
+        assert len(app.models) == 0
+
+    @pytest.mark.asyncio
+    async def test_proposal_starts(self, proposal_data):
+        from sfctl.app import StarfleetApp
+
+        app = StarfleetApp("t-PROP001", proposal_data)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app._overview_populated
+
+    @pytest.mark.asyncio
+    async def test_proposal_tabs_exist(self, proposal_data):
+        from textual.widgets import TabbedContent
+
+        from sfctl.app import StarfleetApp
+
+        app = StarfleetApp("t-PROP001", proposal_data)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            top_tabs = app.query_one("#proposal-top-tabs", TabbedContent)
+            assert top_tabs.tab_count >= 2  # Prompt, Trace, (Diffs if present)
+            bottom_tabs = app.query_one("#tabs-overview", TabbedContent)
+            assert bottom_tabs.tab_count >= 2  # Overview, Issues/history
+
+    @pytest.mark.asyncio
+    async def test_proposal_rankings_summary(self, proposal_data):
+        from sfctl.app import StarfleetApp
+
+        app = StarfleetApp("t-PROP001", proposal_data)
+        summary = app.rankings_summary()
+        assert "partial" in summary
+        assert "1h-2h" in summary
+        assert "4 rubrics" in summary
+
+    @pytest.mark.asyncio
+    async def test_proposal_voting_disabled(self, proposal_data):
+        from sfctl.app import StarfleetApp
+
+        app = StarfleetApp("t-PROP001", proposal_data)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.check_action("vote_up", ()) is False
+            assert app.check_action("vote_down", ()) is False
+            assert app.check_action("search_diffs", ()) is True
+
+    @pytest.mark.asyncio
+    async def test_proposal_tab_navigation(self, proposal_data):
+        from textual.widgets import TabbedContent
+
+        from sfctl.app import StarfleetApp
+
+        app = StarfleetApp("t-PROP001", proposal_data)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            tabs = app.query_one("#tabs-overview", TabbedContent)
+            initial = tabs.active
+            await pilot.press("tab")
+            await pilot.pause()
+            assert tabs.active != initial

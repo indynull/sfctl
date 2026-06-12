@@ -211,11 +211,11 @@ class TestTraceFormatting:
     def test_group_events(self, parsed):
         from sfctl.parsing import group_events
 
-        groups = group_events(parsed.models[0])
+        groups = group_events(parsed.models[0].tool_events)
         assert "thinking" in groups
         assert "list_dir" in groups
         for m in parsed.models:
-            assert len(group_events(m)) >= 2
+            assert len(group_events(m.tool_events)) >= 2
 
     def test_format_event_line_normal(self):
         from sfctl.parsing import format_event_line
@@ -240,6 +240,31 @@ class TestTraceFormatting:
         assert len({trace_type_color(i) for i in range(10)}) > 1
 
 
+class TestToolNameFromInput:
+    def test_pascal_case_variant(self):
+        from sfctl.parsing import _tool_name_from_input
+
+        assert _tool_name_from_input('{"variant":"ReadFile"}') == "read_file"
+        assert _tool_name_from_input('{"variant":"SearchReplace"}') == "search_replace"
+        assert _tool_name_from_input('{"variant":"Grep"}') == "grep"
+        assert _tool_name_from_input('{"variant":"ListDir"}') == "list_dir"
+        assert _tool_name_from_input('{"variant":"Bash"}') == "bash"
+        assert _tool_name_from_input('{"variant":"TodoWrite"}') == "todo_write"
+        assert _tool_name_from_input('{"variant":"UpdateGoal"}') == "update_goal"
+
+    def test_dict_input(self):
+        from sfctl.parsing import _tool_name_from_input
+
+        assert _tool_name_from_input({"variant": "ReadFile"}) == "read_file"
+
+    def test_empty_input(self):
+        from sfctl.parsing import _tool_name_from_input
+
+        assert _tool_name_from_input("") == ""
+        assert _tool_name_from_input("{}") == ""
+        assert _tool_name_from_input({}) == ""
+
+
 class TestParseJsonField:
     def test_valid_json(self):
         from sfctl.parsing import _parse_json_field
@@ -260,3 +285,195 @@ class TestParseJsonField:
         from sfctl.parsing import _parse_json_field
 
         assert _parse_json_field("not json") == []
+
+
+class TestSfValue:
+    def test_string_value(self):
+        from sfctl.parsing import _sf_value
+
+        assert _sf_value({"_sf_rich": True, "value": "hello"}) == "hello"
+
+    def test_list_value(self):
+        from sfctl.parsing import _sf_value
+
+        assert _sf_value({"_sf_rich": True, "value": ["a", "b"]}) == "a, b"
+
+    def test_none_field(self):
+        from sfctl.parsing import _sf_value
+
+        assert _sf_value(None) == ""
+
+    def test_empty_dict(self):
+        from sfctl.parsing import _sf_value
+
+        assert _sf_value({}) == ""
+
+    def test_missing_value(self):
+        from sfctl.parsing import _sf_value
+
+        assert _sf_value({"_sf_rich": True}) == ""
+
+
+class TestExtractRubrics:
+    def test_basic(self):
+        from sfctl.parsing import _extract_rubrics
+
+        rubrics = {
+            "items": [
+                {"nestedAnnotations": {"rubric": {"_sf_rich": True, "value": "Rubric one"}}},
+                {"nestedAnnotations": {"rubric": {"_sf_rich": True, "value": "Rubric two"}}},
+            ]
+        }
+        result = _extract_rubrics(rubrics)
+        assert result == ["Rubric one", "Rubric two"]
+
+    def test_empty(self):
+        from sfctl.parsing import _extract_rubrics
+
+        assert _extract_rubrics(None) == []
+        assert _extract_rubrics({}) == []
+        assert _extract_rubrics({"items": []}) == []
+
+
+class TestParseProposal:
+    def test_basic_fields(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert p.repo_url == "https://github.com/example/repo"
+        assert p.repo_description == "A test repo for testing"
+        assert p.difficulty == "Medium difficulty task"
+        assert p.domain == "other"
+        assert p.duration == "1h-2h"
+        assert p.solved == "partial"
+
+    def test_rubrics(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert len(p.rubrics) == 4
+        assert p.rubrics[0] == "Rubric one"
+        assert p.rubrics[-1] == "Rubric four"
+
+    def test_prompt(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert p.prompt == "Implement feature X"
+
+    def test_code_patch(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert "diff --git" in p.code_patch
+        assert len(p.file_diffs) == 1
+        assert p.file_diffs[0].filename == "foo.py"
+
+    def test_bash_history(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert len(p.bash_history) == 2
+        assert p.bash_history[1]["command"] == "uv run pytest"
+
+    def test_issues(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert p.issues == "Model failed on edge case"
+        assert len(p.issue_comments) == 1
+
+    def test_model_id(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert p.model_id == "test-model-v1"
+
+    def test_trace_ref(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert p.trace_ref == "coding-question/worker/session/trace.json"
+
+    def test_trace_data_real_format(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        trace = {
+            "trace": [
+                {"role": "user", "content": [{"type": "text", "text": "Do the thing"}]},
+                {"role": "tool_call", "timestamp": 1000, "toolCallId": "tc1",
+                 "title": "List `.`", "status": "completed",
+                 "rawInput": '{"variant":"ListDir"}', "rawOutput": "file1\nfile2"},
+                {"role": "assistant_thinking", "content": "Let me think...", "timestamp": 1500},
+                {"role": "tool_call", "timestamp": 2000, "toolCallId": "tc2",
+                 "title": "Read `foo.py`", "status": "completed",
+                 "rawInput": '{"variant":"ReadFile"}', "rawOutput": "contents"},
+                {"role": "assistant", "content": "Short note"},
+                {"role": "assistant", "content": "x" * 300},
+            ]
+        }
+        p = parse_proposal(proposal_data["history"], trace)
+        assert len(p.tool_events) == 3  # 2 tool_calls + 1 thinking
+        assert p.tool_events[0]["name"] == "list_dir"
+        assert p.tool_events[0]["title"] == "List `.`"
+        assert p.tool_events[1]["name"] == "thinking"
+        assert p.tool_events[2]["name"] == "read_file"
+        assert not any(e["name"] == "assistant" for e in p.tool_events)
+        assert p.trace_summary == "x" * 300
+        assert len(p.messages) == 3
+
+    def test_trace_data_legacy_format(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        trace = {
+            "trace": "Summary of work done",
+            "messages": '[{"role": "assistant", "content": "done"}]',
+            "toolEvents": '[{"name": "list_dir", "wall_time": 100}]',
+        }
+        p = parse_proposal(proposal_data["history"], trace)
+        assert p.trace_summary == "Summary of work done"
+        assert len(p.tool_events) == 1
+        assert p.tool_events[0]["name"] == "list_dir"
+        assert len(p.messages) == 1
+
+    def test_no_trace(self, proposal_data):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert p.trace_summary == ""
+        assert p.tool_events == []
+        assert p.messages == []
+
+    def test_empty_history(self):
+        from sfctl.parsing import parse_proposal
+
+        p = parse_proposal([])
+        assert p.repo_url == ""
+        assert p.rubrics == []
+
+
+class TestProposalRubricChanges:
+    def test_additions(self):
+        from sfctl.parsing import proposal_rubric_changes
+
+        prev = ["A", "B"]
+        curr = ["A", "B", "C"]
+        changes = proposal_rubric_changes(prev, curr)
+        assert len(changes) == 1
+        assert "C" in changes[0]
+        assert "[green]" in changes[0]
+
+    def test_removals(self):
+        from sfctl.parsing import proposal_rubric_changes
+
+        prev = ["A", "B", "C"]
+        curr = ["A", "C"]
+        changes = proposal_rubric_changes(prev, curr)
+        assert len(changes) == 1
+        assert "B" in changes[0]
+        assert "[red]" in changes[0]
+
+    def test_no_changes(self):
+        from sfctl.parsing import proposal_rubric_changes
+
+        assert proposal_rubric_changes(["A", "B"], ["A", "B"]) == []

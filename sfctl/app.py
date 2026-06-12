@@ -6,7 +6,6 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.reactive import reactive
-from textual.widget import Widget
 from textual.widgets import (
     Button,
     Collapsible,
@@ -39,8 +38,11 @@ from sfctl.ids import (
     vote_label_id,
     vote_up_id,
 )
-from sfctl.models import Annotation, ModelData, ModelScores, ParsedContent
+from sfctl.models import Annotation, ModelData, ModelScores, ParsedContent, ProposalData
 from sfctl.parsing import (
+    _extract_rubrics,
+    _format_duration,
+    _sanitize,
     bump_headings,
     clean_event_name,
     diff_line_ref,
@@ -54,6 +56,8 @@ from sfctl.parsing import (
     history_justification_texts,
     history_ranking_changes,
     parse_content,
+    parse_proposal,
+    proposal_rubric_changes,
     rank_color,
     strip_diff_preamble,
     trace_type_color,
@@ -69,6 +73,9 @@ from sfctl.scoring import (
 )
 from sfctl.screens import (
     DiffSearchModal,
+    EventSearchModal,
+    GrepDiffsModal,
+    GrepEventsModal,
     HelpModal,
     YankCommentModal,
     build_clipboard_text,
@@ -81,6 +88,8 @@ class StarfleetApp(App):
     TITLE = "Starfleet Control"
     COMMANDS = {NavigationProvider}
     CSS_PATH = "app.tcss"
+
+    _EMPTY_SUMMARY = "*No summary yet -- press ctrl+e to write one, y to yank snippets.*"
 
     current_model_index: reactive[int] = reactive(0)
     scores: reactive[list[ModelScores]] = reactive(list, always_update=True)
@@ -103,6 +112,9 @@ class StarfleetApp(App):
         Binding("+", "vote_up", f"{ARROW_UP} Up", show=True),
         Binding("-", "vote_down", f"{ARROW_DOWN} Down", show=True),
         Binding("ctrl+f", "search_diffs", "Find File", show=True),
+        Binding("ctrl+g", "search_events", "Find Event", show=True),
+        Binding("ctrl+shift+f", "grep_diffs", "Grep Diffs"),
+        Binding("ctrl+shift+g", "grep_events", "Grep Events"),
         Binding("c", "copy_summary", "Copy", show=True),
         Binding("e", "toggle_collapse", "Fold", show=True),
         Binding("?", "help", "Help", show=True),
@@ -118,16 +130,30 @@ class StarfleetApp(App):
         self.task_arg = task_arg
         self.data = data
         self.cookies = cookies
-        self.parsed: ParsedContent = parse_content(data.get("content", {}))
-        self.task_id = data.get("task", {}).get("taskId") or self.parsed.task_id or task_arg
-        self.models: list[ModelData] = self.parsed.models
-        history = data.get("history", [])
+        self.task_type = detect_task_type(data)
+        self.task_id = data.get("task", {}).get("taskId") or task_arg
+
+        # Type-specific parsing
+        self.proposal: ProposalData | None = None
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            self.proposal = parse_proposal(self._get_history(), data.get("trace"))
+            self.parsed = ParsedContent(
+                task_id=self.task_id,
+                repository=self.proposal.repo_url,
+                current_prompt=self.proposal.prompt,
+            )
+            self.models: list[ModelData] = []
+        else:
+            self.parsed = parse_content(data.get("content", {}))
+            self.task_id = self.parsed.task_id or self.task_id
+            self.models = self.parsed.models
+
         self.annotations: list[list[Annotation]]
         self.summary_text: str
         self.annotations, self.summary_text = load_annotations(
-            self.task_id, len(self.models), history
+            self.task_id, len(self.models), self._get_history()
         )
-        self._server_justification = _latest_server_justification(history)
+        self._server_justification = _latest_server_justification(self._get_history())
         self.scores: list[ModelScores] = scores_from_annotations(self.annotations)
         self._populated_models: set[int] = set()
         self._overview_populated = False
@@ -140,11 +166,14 @@ class StarfleetApp(App):
         else:
             self.sub_title = f"Task {self.task_id}"
 
-        self.task_type = detect_task_type(data)
-
         config = load_config()
         if "theme" in config:
             self.theme = config["theme"]
+
+    def _get_history(self) -> list:
+        """Return history as a list, normalizing the single-entry dict case."""
+        h = self.data.get("history", [])
+        return [h] if not isinstance(h, list) else h
 
     def nav_items(self) -> list[tuple[str, str]]:
         return ranking.nav_items(self.models)
@@ -152,26 +181,33 @@ class StarfleetApp(App):
     def diff_items(self) -> list[tuple[str, int, str]]:
         return ranking.diff_items(self.models)
 
-    def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-
+    def _compose_info_bar(self) -> ComposeResult:
+        """Compose the shared top info bar."""
         repo = self.parsed.repository
-        prompt = bump_headings(self.parsed.current_prompt or EM_DASH)
         self.task_url = get_web_url(f"/tasks/{self.task_id}")
-        with Vertical(id=ids.INFO_BAR):
+        is_proposal = self.task_type == TaskType.PROJECT_PROPOSAL
+        bar_classes = "proposal" if is_proposal else ""
+        with Vertical(id=ids.INFO_BAR, classes=bar_classes):
             yield Link(f"Task: {self.task_id}", url=self.task_url, id=ids.TASK_BAR)
             yield Static(self.rankings_summary(), id=ids.SCOREBOARD)
             if repo and repo != EM_DASH:
                 yield Static(
-                    f"[bold]Repo:[/bold] {repo.replace('[', '(').replace(']', ')')}",
+                    f"[bold]Repo:[/bold] {_sanitize(repo)}",
                     id=ids.REPO_BAR,
                 )
-            with (
-                Collapsible(title="Prompt", collapsed=False, id=ids.PROMPT_BAR),
-                ScrollableContainer(),
-            ):
-                yield Static(RichMarkdown(prompt))
+            if is_proposal:
+                yield TabbedContent(id=ids.PROPOSAL_TOP_TABS)
+            else:
+                prompt = bump_headings(self.parsed.current_prompt or EM_DASH)
+                with (
+                    Collapsible(title="Prompt", collapsed=False, id=ids.PROMPT_BAR),
+                    ScrollableContainer(),
+                ):
+                    yield Static(RichMarkdown(prompt))
 
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield from self._compose_info_bar()
         yield Footer()
 
         self._populated_models = set()
@@ -187,6 +223,12 @@ class StarfleetApp(App):
                 )
             return
 
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            with ContentSwitcher(initial=ids.OVERVIEW, id=ids.MAIN_SWITCHER), \
+                 ScrollableContainer(id=ids.OVERVIEW):
+                pass
+            return
+
         initial = model_id(0) if self.models else ids.OVERVIEW
         with ContentSwitcher(initial=initial, id=ids.MAIN_SWITCHER):
             for idx in range(len(self.models)):
@@ -199,7 +241,7 @@ class StarfleetApp(App):
                     )
 
             with ScrollableContainer(id=ids.OVERVIEW):
-                pass  # populated lazily by _populate_overview()
+                pass
 
     @staticmethod
     async def _mount_into(
@@ -213,6 +255,69 @@ class StarfleetApp(App):
         if name not in self._trace_type_map:
             self._trace_type_map[name] = len(self._trace_type_map)
         return self._trace_type_map[name] % 10
+
+    async def _mount_trace_content(
+        self,
+        pane: TabPane,
+        tool_events: list,
+        summary: str = "",
+        model_id: str = "",
+        bash_history: list[dict] | None = None,
+        setup_commands: list[dict] | None = None,
+    ) -> None:
+        """Mount trace event widgets into a TabPane (shared by code review and proposal)."""
+        tw: list = []
+        if model_id:
+            tw.append(Static(f"[bold]Model:[/bold] {model_id}"))
+        if summary:
+            tw.append(Static(RichMarkdown(bump_headings(summary, 4))))
+
+        if setup_commands:
+            setup_lines = "\n".join(
+                f"[dim]{format_timestamp(cmd.get('timestamp', ''))}[/dim]  "
+                f"{_sanitize(cmd.get('command', ''), 200)}"
+                for cmd in setup_commands
+            )
+            tw.append(Static(f"[bold]Setup ({len(setup_commands)}):[/bold]"))
+            tw.append(Static(setup_lines))
+
+        grouped = group_events(tool_events)
+        if grouped:
+            timed = [
+                (name, evts, sum(e.get("wall_time") or 0 for e in evts))
+                for name, evts in grouped.items()
+            ]
+            timed.sort(key=lambda x: -x[2])
+            parts = []
+            for ename, events, total_ms in timed:
+                ti = self._trace_type_index(ename)
+                color = trace_type_color(ti)
+                time_str = f" {_format_duration(total_ms)}" if total_ms else ""
+                parts.append(f"[{color}]{ename}[/] [dim]{len(events)}x{time_str}[/]")
+            tw.append(Static("  ".join(parts)))
+            tw.append(LazyCollapsible.for_trace(
+                title=f"Event Details ({len(tool_events)} events)",
+                events=tool_events,
+            ))
+
+        if bash_history:
+            bh_lines = "\n".join(
+                f"[dim]{format_timestamp(bh.get('timestamp', ''))}[/dim]  "
+                f"{_sanitize(bh.get('command', ''), 200)}"
+                for bh in bash_history
+            )
+            bh_c = Collapsible(
+                title=f"Bash History ({len(bash_history)})", collapsed=True, classes="bash-history"
+            )
+            tw.append(bh_c)
+
+        if not tw:
+            tw.append(Static("No trace data.", classes="status"))
+        await pane.mount_all(tw)
+
+        if bash_history:
+            bh_c = pane.query_one(".bash-history", Collapsible)
+            await bh_c.query_one(Collapsible.Contents).mount(Static(bh_lines))
 
     def _vote_bar(self, idx: int, context: str) -> Horizontal:
         """Small inline up/down vote buttons for a model tab."""
@@ -261,8 +366,6 @@ class StarfleetApp(App):
         letter = model_letter(idx)
 
         container = self.query_one(f"#{mid}", ScrollableContainer)
-
-        grouped = group_events(m)
         total = sum(1 for e in m.tool_events if isinstance(e, dict))
 
         tabs = TabbedContent(id=model_tabs_id(mid))
@@ -271,33 +374,14 @@ class StarfleetApp(App):
         response_pane = TabPane("Response", id=tab_response_id(mid))
         await tabs.add_pane(response_pane)
         summary = self._model_summary_text(m)
-        await response_pane.mount_all(
-            [
-                self._vote_bar(idx, "response"),
-                Static(RichMarkdown(summary)),
-            ]
-        )
+        await response_pane.mount_all([
+            self._vote_bar(idx, "response"),
+            Static(RichMarkdown(summary)),
+        ])
 
         trace_pane = TabPane(f"Trace ({total})", id=tab_trace_id(mid))
         await tabs.add_pane(trace_pane)
-        if not grouped:
-            await trace_pane.mount(Static("No tool events.", classes="status"))
-        else:
-            sorted_groups = sorted(grouped.items(), key=lambda x: -len(x[1]))
-            summary_parts = []
-            for ename, events in sorted_groups:
-                ti = self._trace_type_index(ename)
-                color = trace_type_color(ti)
-                summary_parts.append(f"[{color}]{ename}[/] [dim]{len(events)}x[/]")
-            trace_widgets: list[Static | LazyCollapsible] = [
-                Static("  " + "  ".join(summary_parts), classes="trace-summary-row"),
-            ]
-            trace_c = LazyCollapsible.for_trace(
-                title=f"Event Details ({total} events)",
-                events=m.tool_events,
-            )
-            trace_widgets.append(trace_c)
-            await trace_pane.mount_all(trace_widgets)
+        await self._mount_trace_content(trace_pane, m.tool_events)
 
         diffs_pane = TabPane(f"Diffs ({len(m.file_diffs)})", id=tab_diffs_id(mid))
         await tabs.add_pane(diffs_pane)
@@ -320,118 +404,232 @@ class StarfleetApp(App):
         self._overview_populated = True
 
         container = self.query_one(f"#{ids.OVERVIEW}", ScrollableContainer)
-
-        history = self.data.get("history", [])
-        if not isinstance(history, list):
-            history = [history]
+        history = self._get_history()
         tabs = TabbedContent(id=ids.TABS_OVERVIEW)
         await container.mount(tabs)
 
         current_pane = TabPane("Current", id=ids.TAB_CURRENT)
         await tabs.add_pane(current_pane)
-        widgets = [
+        await current_pane.mount_all([
             Static(self.rankings_summary(), id=ids.JUST_RANKINGS),
             Markdown(
-                self.summary_text
-                or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*",
+                self.summary_text or self._EMPTY_SUMMARY,
                 id=ids.JUST_PREVIEW,
             ),
-        ]
-        widgets.append(
             TextArea(
-                self.summary_text,
-                language="markdown",
-                show_line_numbers=True,
-                id=ids.JUST_EDITOR,
-            )
-        )
-        await current_pane.mount_all(widgets)
+                self.summary_text, language="markdown",
+                show_line_numbers=True, id=ids.JUST_EDITOR,
+            ),
+        ])
         self.query_one(f"#{ids.JUST_EDITOR}").display = False
 
-        # -- History entry tabs (newest first) --
-        tab_idx = 0
         if history:
-            for orig_idx in range(len(history) - 1, -1, -1):
-                entry = history[orig_idx]
-                level = entry.get("reviewLevel", "?")
-                changed = orig_idx == 0 or has_meaningful_changes(history[orig_idx - 1], entry)
-                entry_fb = feedback_for_entry(history, orig_idx)
+            await self._populate_history_tabs(tabs, history)
 
-                # Skip pure reviews with no feedback (nothing to show)
-                if not changed and not entry_fb:
-                    continue
+    async def _populate_proposal(self) -> None:
+        """Lazily compose the proposal overview panel."""
+        if self._overview_populated or not self.proposal:
+            return
+        self._overview_populated = True
+        p = self.proposal
 
-                prev = history[orig_idx - 1] if orig_idx > 0 else None
-                if entry.get("isEditAction") and prev is not None:
-                    kind = "edit"
-                    level = prev.get("reviewLevel", level)
+        await self._populate_proposal_top(p)
+
+        container = self.query_one(f"#{ids.OVERVIEW}", ScrollableContainer)
+        tabs = TabbedContent(id=ids.TABS_OVERVIEW)
+        await container.mount(tabs)
+        tab_idx = 0
+
+        # -- Overview tab (metadata + notes) --
+        overview_pane = TabPane("Overview", id=ids.TAB_CURRENT)
+        await tabs.add_pane(overview_pane)
+        ow: list = []
+        if p.repo_url:
+            ow.append(Link(p.repo_url, url=p.repo_url))
+        if p.repo_description:
+            ow.append(Static(f"[dim]{p.repo_description}[/dim]"))
+        meta_parts = []
+        if p.domain:
+            meta_parts.append(f"[bold]Domain:[/bold] {p.domain}")
+        if p.duration:
+            duration_str = p.duration
+            if p.trace_elapsed_ms:
+                duration_str += f" (actual: {_format_duration(p.trace_elapsed_ms)})"
+            meta_parts.append(f"[bold]Duration:[/bold] {duration_str}")
+        elif p.trace_elapsed_ms:
+            meta_parts.append(f"[bold]Duration:[/bold] {_format_duration(p.trace_elapsed_ms)}")
+        if p.solved:
+            color = {"full": "green", "partial": "yellow", "no": "red"}.get(p.solved, "white")
+            meta_parts.append(f"[bold]Solved:[/bold] [{color}]{p.solved}[/{color}]")
+        if p.model_id:
+            meta_parts.append(f"[bold]Model:[/bold] [dim]{p.model_id}[/dim]")
+        if meta_parts:
+            ow.append(Static("  |  ".join(meta_parts)))
+        if p.familiarity:
+            ow.append(Static("[bold]Understanding:[/bold]"))
+            ow.append(Markdown(p.familiarity))
+        if p.difficulty:
+            ow.append(Static("[bold]Difficulty:[/bold]"))
+            ow.append(Markdown(p.difficulty))
+        if p.rubrics:
+            ow.append(Static(f"[bold]Rubrics ({len(p.rubrics)}):[/bold]"))
+            rubric_md = "\n".join(f"{i}. {r}" for i, r in enumerate(p.rubrics, 1))
+            ow.append(Markdown(rubric_md))
+        await overview_pane.mount_all(ow)
+
+        # -- Issues tab --
+        if p.issues:
+            issues_pane = TabPane("Issues", id=tab_entry_id(tab_idx))
+            tab_idx += 1
+            await tabs.add_pane(issues_pane)
+            iw: list = [Markdown(p.issues)]
+            for comment in p.issue_comments:
+                author = comment.get("createdBy", {}).get("email", "unknown")
+                ts = format_timestamp(comment.get("createdAt", ""))
+                iw.append(
+                    Static(f"\n[dim]{author} ({ts}):[/dim]\n{comment.get('content', '')}")
+                )
+            await issues_pane.mount_all(iw)
+
+        await self._populate_history_tabs(tabs, self._get_history(), tab_offset=20)
+
+    async def _populate_proposal_top(self, p: ProposalData) -> None:
+        """Populate the top info-bar tabs with Prompt, Trace, and Diffs."""
+        top_tabs = self.query_one(f"#{ids.PROPOSAL_TOP_TABS}", TabbedContent)
+        tab_idx = 100
+
+        prompt_pane = TabPane("Prompt", id=tab_entry_id(tab_idx))
+        tab_idx += 1
+        await top_tabs.add_pane(prompt_pane)
+        await prompt_pane.mount(Markdown(p.prompt or "*No prompt.*"))
+
+        if p.trace_summary:
+            response_pane = TabPane("Response", id=tab_entry_id(tab_idx))
+            tab_idx += 1
+            await top_tabs.add_pane(response_pane)
+            rw: list = []
+            if p.model_id:
+                rw.append(Static(f"[bold]Model:[/bold] {p.model_id}"))
+            rw.append(Static(RichMarkdown(bump_headings(p.trace_summary, 4))))
+            await response_pane.mount_all(rw)
+
+        total_events = sum(1 for e in p.tool_events if isinstance(e, dict))
+        trace_pane = TabPane(f"Trace ({total_events})", id=tab_entry_id(tab_idx))
+        tab_idx += 1
+        await top_tabs.add_pane(trace_pane)
+        await self._mount_trace_content(
+            trace_pane, p.tool_events,
+            model_id=p.model_id, bash_history=p.bash_history,
+            setup_commands=p.setup_commands,
+        )
+
+        if p.file_diffs:
+            diffs_pane = TabPane(f"Diffs ({len(p.file_diffs)})", id=tab_entry_id(tab_idx))
+            tab_idx += 1
+            await top_tabs.add_pane(diffs_pane)
+            await diffs_pane.mount_all([
+                LazyCollapsible.for_diff(fd.filename, fd.diff, "S", classes="inner")
+                for fd in p.file_diffs
+            ])
+
+    async def _populate_history_tabs(
+        self, tabs: TabbedContent, history: list, tab_offset: int = 0
+    ) -> None:
+        """Populate history entry tabs into a TabbedContent widget."""
+        is_proposal = self.task_type == TaskType.PROJECT_PROPOSAL
+        tab_idx = tab_offset
+
+        for orig_idx in range(len(history) - 1, -1, -1):
+            entry = history[orig_idx]
+            prev = history[orig_idx - 1] if orig_idx > 0 else None
+            entry_fb = feedback_for_entry(history, orig_idx)
+
+            if prev is None:
+                changed = True
+            elif is_proposal:
+                changed = _extract_rubrics(entry.get("rubrics")) != _extract_rubrics(
+                    prev.get("rubrics")
+                )
+            else:
+                changed = has_meaningful_changes(prev, entry)
+
+            if not changed and not entry_fb:
+                continue
+
+            level = entry.get("reviewLevel", "?")
+            prev = history[orig_idx - 1] if orig_idx > 0 else None
+            if entry.get("isEditAction") and prev is not None:
+                kind = "edit"
+                level = prev.get("reviewLevel", level)
+            else:
+                kind = "revision" if changed else "review"
+            pane = TabPane(f"L{level} {kind}", id=tab_entry_id(tab_idx))
+            await tabs.add_pane(pane)
+
+            widgets: list = []
+            if not is_proposal:
+                widgets.append(Static(format_history_entry(entry, orig_idx)))
+
+            for fb in entry_fb:
+                ts = fb.get("timestamp", "")
+                ts_label = format_timestamp(ts) if ts else "unknown"
+                widgets.append(
+                    Collapsible(title=f"Feedback | {ts_label}", collapsed=False, classes="inner")
+                )
+
+            diff_statics: list[Static] = []
+            if changed and prev:
+                if is_proposal:
+                    rubric_changes = proposal_rubric_changes(
+                        _extract_rubrics(prev.get("rubrics")),
+                        _extract_rubrics(entry.get("rubrics")),
+                    )
+                    if rubric_changes:
+                        diff_statics.append(Static("\n".join(rubric_changes)))
                 else:
-                    kind = "revision" if changed else "review"
-                pane = TabPane(f"L{level} {kind}", id=tab_entry_id(tab_idx))
-                await tabs.add_pane(pane)
-
-                widgets_to_mount: list[Widget] = [Static(format_history_entry(entry, orig_idx))]
-
-                # Feedback new in this entry (inline)
-                for fb in entry_fb:
-                    ts = fb.get("timestamp", "")
-                    ts_label = format_timestamp(ts) if ts else "unknown"
-                    fb_c = Collapsible(
-                        title=f"Feedback | {ts_label}", collapsed=False, classes="inner"
-                    )
-                    widgets_to_mount.append(fb_c)
-
-                # Diff from previous entry (only for revisions)
-                if changed and orig_idx > 0:
-                    ranking_changes = history_ranking_changes(history[orig_idx - 1], entry)
-                    just_texts = history_justification_texts(history[orig_idx - 1], entry)
-                    if ranking_changes or just_texts:
-                        diff_c = Collapsible(
-                            title="Changes",
-                            collapsed=False,
-                            classes="history-diff",
-                        )
-                        widgets_to_mount.append(diff_c)
-
-                # Justification (only for revisions -- reviews have same text)
-                if changed:
-                    just = history_justification(entry)
-                    if just:
-                        widgets_to_mount.append(
-                            Static("[bold]Justification:[/bold]", classes="section-title")
-                        )
-                        widgets_to_mount.append(Markdown(just))
-                    else:
-                        widgets_to_mount.append(Static("No justification.", classes="status"))
-
-                await pane.mount_all(widgets_to_mount)
-
-                # Mount feedback message content
-                for fb_c_widget, fb in zip(pane.query(".inner"), entry_fb, strict=False):
-                    message = fb.get("message", "No message.")
-                    await fb_c_widget.query_one(Collapsible.Contents).mount(
-                        Static(RichMarkdown(message))
-                    )
-
-                # Mount diff content into the collapsible
-                if changed and orig_idx > 0 and (ranking_changes or just_texts):
-                    diff_c = pane.query_one(".history-diff", Collapsible)
-                    diff_widgets: list[Static] = []
-                    if ranking_changes:
-                        diff_widgets.append(Static("\n".join(ranking_changes)))
-                    if just_texts:
+                    rc = history_ranking_changes(prev, entry)
+                    jt = history_justification_texts(prev, entry)
+                    if rc:
+                        diff_statics.append(Static("\n".join(rc)))
+                    if jt:
                         from redlines import Redlines
 
-                        diff_widgets.append(
-                            Static(Redlines(just_texts[0], just_texts[1]).output_rich)
-                        )
-                    await diff_c.query_one(Collapsible.Contents).mount_all(diff_widgets)
+                        diff_statics.append(Static(Redlines(jt[0], jt[1]).output_rich))
 
-                tab_idx += 1
+            diff_c = None
+            if diff_statics:
+                title = "Rubric Changes" if is_proposal else "Changes"
+                diff_c = Collapsible(title=title, collapsed=False, classes="history-diff")
+                widgets.append(diff_c)
+
+            if not is_proposal and changed:
+                just = history_justification(entry)
+                if just:
+                    widgets.append(Static("[bold]Justification:[/bold]", classes="section-title"))
+                    widgets.append(Markdown(just))
+                else:
+                    widgets.append(Static("No justification.", classes="status"))
+
+            await pane.mount_all(widgets)
+
+            for fb_c, fb in zip(pane.query(".inner"), entry_fb, strict=False):
+                await fb_c.query_one(Collapsible.Contents).mount(
+                    Static(RichMarkdown(fb.get("message", "No message.")))
+                )
+
+            if diff_c:
+                await diff_c.query_one(Collapsible.Contents).mount_all(diff_statics)
+
+            tab_idx += 1
 
     async def on_mount(self) -> None:
         if self.task_type == TaskType.UNKNOWN:
             self.notify(f"Loaded task {self.task_id} (unsupported type)")
+            self._maybe_show_tutorial()
+            return
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            await self._populate_proposal()
+            self.notify(f"Loaded proposal {self.task_id}")
             self._maybe_show_tutorial()
             return
         if self.models:
@@ -493,24 +691,28 @@ class StarfleetApp(App):
         ):
             self._show_justification_preview()
 
-    def _is_on_model_view(self) -> bool:
-        """True when a model panel is active in the content switcher."""
+    @property
+    def _current_section(self) -> str | None:
+        """Return the active section ID from the content switcher, or None."""
         try:
-            current = self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher).current
-            return current is not None and str(current).startswith("model-")
+            c = self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher).current
+            return str(c) if c is not None else None
         except Exception:
-            return False
+            return None
+
+    def _is_on_model_view(self) -> bool:
+        s = self._current_section
+        return s is not None and s.startswith("model-")
 
     def _is_on_overview(self) -> bool:
-        """True when the overview panel is active in the content switcher."""
-        try:
-            return bool(
-                self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher).current == ids.OVERVIEW
-            )
-        except Exception:
-            return False
+        return self._current_section == ids.OVERVIEW
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            return action not in (
+                "vote_up", "vote_down", "go_model",
+                "edit_justification", "copy_summary",
+            )
         if action in ("vote_up", "vote_down", "search_diffs"):
             return self._is_on_model_view()
         if action in ("edit_justification", "copy_summary"):
@@ -525,7 +727,10 @@ class StarfleetApp(App):
         self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher).current = section_id
         self.refresh_bindings()
         if section_id == ids.OVERVIEW:
-            await self._populate_overview()
+            if self.task_type == TaskType.PROJECT_PROPOSAL:
+                await self._populate_proposal()
+            else:
+                await self._populate_overview()
             return
         for i in range(len(self.models)):
             if model_id(i) == section_id:
@@ -557,21 +762,16 @@ class StarfleetApp(App):
 
     def _active_tabbed_content(self) -> TabbedContent | None:
         """Return the TabbedContent widget in the currently visible view."""
-        if self.task_type == TaskType.UNKNOWN:
+        section = self._current_section
+        if not section:
             return None
-        switcher = self.query_one("#main-switcher", ContentSwitcher)
-        current = switcher.current
-        if not current:
-            return None
+        tid = ids.TABS_OVERVIEW if section == ids.OVERVIEW else model_tabs_id(section)
         try:
-            if current == ids.OVERVIEW:
-                return self.query_one(f"#{ids.TABS_OVERVIEW}", TabbedContent)
-            return self.query_one(f"#{model_tabs_id(current)}", TabbedContent)
+            return self.query_one(f"#{tid}", TabbedContent)
         except Exception:
             return None
 
     def _active_tabs_widget(self):
-        """Return the Tabs widget from the active TabbedContent, if any."""
         from textual.widgets import Tabs
 
         tc = self._active_tabbed_content()
@@ -583,14 +783,14 @@ class StarfleetApp(App):
         return None
 
     def action_next_tab(self) -> None:
-        tabs = self._active_tabs_widget()
-        if tabs:
-            tabs.action_next_tab()
+        t = self._active_tabs_widget()
+        if t:
+            t.action_next_tab()
 
     def action_prev_tab(self) -> None:
-        tabs = self._active_tabs_widget()
-        if tabs:
-            tabs.action_previous_tab()
+        t = self._active_tabs_widget()
+        if t:
+            t.action_previous_tab()
 
     def action_toggle_collapse(self) -> None:
         tc = self._active_tabbed_content()
@@ -614,12 +814,13 @@ class StarfleetApp(App):
         self.notify(f"Theme: {theme_name}")
 
     def _current_model(self) -> ModelData | None:
-        if 0 <= self.current_model_index < len(self.models):
-            model: ModelData = self.models[self.current_model_index]
-            return model
-        return None
+        idx = self.current_model_index
+        return self.models[idx] if 0 <= idx < len(self.models) else None
 
     def action_search_diffs(self) -> None:
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            self._search_proposal_diffs()
+            return
         m = self._current_model()
         if not m:
             self.notify("Navigate to a model first.", severity="warning")
@@ -633,6 +834,136 @@ class StarfleetApp(App):
                 await self.go_to_diff(result[0], result[1])
 
         self.push_screen(DiffSearchModal(self.current_model_index, m.file_diffs), _on_result)
+
+    def _search_proposal_diffs(self) -> None:
+        if not self.proposal or not self.proposal.file_diffs:
+            self.notify("No diffs in this proposal.", severity="warning")
+            return
+
+        async def _on_result(result: tuple[int, str] | None) -> None:
+            if not result:
+                return
+            _, filename = result
+            top_tabs = self.query_one(f"#{ids.PROPOSAL_TOP_TABS}", TabbedContent)
+            for pane in top_tabs.query(TabPane):
+                if str(top_tabs.get_tab(pane).label).startswith("Diffs"):
+                    top_tabs.active = str(pane.id)
+                    for collapsible in pane.query(Collapsible):
+                        if str(collapsible.title) == filename:
+                            collapsible.collapsed = False
+                            break
+                    break
+
+        self.push_screen(DiffSearchModal(0, self.proposal.file_diffs), _on_result)
+
+    def action_search_events(self) -> None:
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            events = self.proposal.tool_events if self.proposal else []
+        else:
+            m = self._current_model()
+            events = m.tool_events if m else []
+        dict_events = [e for e in events if isinstance(e, dict)]
+        if not dict_events:
+            self.notify("No trace events.", severity="warning")
+            return
+
+        async def _on_result(event_index: int | None) -> None:
+            if event_index is None:
+                return
+            await self._expand_trace_event(event_index, dict_events)
+
+        self.push_screen(EventSearchModal(dict_events), _on_result)
+
+    async def _expand_trace_event(self, event_index: int, events: list[dict]) -> None:
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            top_tabs = self.query_one(f"#{ids.PROPOSAL_TOP_TABS}", TabbedContent)
+            for pane in top_tabs.query(TabPane):
+                if str(top_tabs.get_tab(pane).label).startswith("Trace"):
+                    top_tabs.active = str(pane.id)
+                    target_pane = pane
+                    break
+            else:
+                return
+        else:
+            m = self._current_model()
+            if not m:
+                return
+            mid = model_id(self.current_model_index)
+            await self.go_to(mid)
+            tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
+            tabs.active = tab_trace_id(mid)
+            target_pane = tabs.get_pane(tab_trace_id(mid))
+
+        trace_collapsibles = [
+            c for c in target_pane.query(Collapsible)
+            if "trace-event-c" in (c.classes or set())
+        ]
+        if not trace_collapsibles:
+            for c in target_pane.query(LazyCollapsible):
+                if c.lazy.events and not c.lazy.populated:
+                    c.collapsed = False
+                    await self.workers.wait_for_complete()
+                    trace_collapsibles = [
+                        cc for cc in target_pane.query(Collapsible)
+                        if "trace-event-c" in (cc.classes or set())
+                    ]
+                    break
+
+        if 0 <= event_index < len(trace_collapsibles):
+            target = trace_collapsibles[event_index]
+            target.collapsed = False
+            self.call_later(lambda t=target: t.scroll_visible())
+
+    def action_grep_diffs(self) -> None:
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            file_diffs = self.proposal.file_diffs if self.proposal else []
+            model_index = 0
+        else:
+            m = self._current_model()
+            if not m:
+                self.notify("Navigate to a model first.", severity="warning")
+                return
+            file_diffs = m.file_diffs
+            model_index = self.current_model_index
+        if not file_diffs:
+            self.notify("No diffs to search.", severity="warning")
+            return
+
+        async def _on_result(result: tuple[int, str] | None) -> None:
+            if not result:
+                return
+            if self.task_type == TaskType.PROJECT_PROPOSAL:
+                top_tabs = self.query_one(f"#{ids.PROPOSAL_TOP_TABS}", TabbedContent)
+                for pane in top_tabs.query(TabPane):
+                    if str(top_tabs.get_tab(pane).label).startswith("Diffs"):
+                        top_tabs.active = str(pane.id)
+                        for collapsible in pane.query(Collapsible):
+                            if str(collapsible.title) == result[1]:
+                                collapsible.collapsed = False
+                                break
+                        break
+            else:
+                await self.go_to_diff(result[0], result[1])
+
+        self.push_screen(GrepDiffsModal(model_index, file_diffs), _on_result)
+
+    def action_grep_events(self) -> None:
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            events = self.proposal.tool_events if self.proposal else []
+        else:
+            m = self._current_model()
+            events = m.tool_events if m else []
+        dict_events = [e for e in events if isinstance(e, dict)]
+        if not dict_events:
+            self.notify("No trace events.", severity="warning")
+            return
+
+        async def _on_result(event_index: int | None) -> None:
+            if event_index is None:
+                return
+            await self._expand_trace_event(event_index, dict_events)
+
+        self.push_screen(GrepEventsModal(dict_events), _on_result)
 
     def action_yank_file(self) -> None:
         focused = self.focused
@@ -706,19 +1037,10 @@ class StarfleetApp(App):
         self.notify(f"[{color}]{arrow}[/] {model_letter(idx)} {context}: {sign}")
 
     def _vote(self, delta: int) -> None:
-        if self.task_type == TaskType.UNKNOWN:
-            self.notify("Voting not available for this task type.", severity="warning")
-            return
         idx = self.current_model_index
-        if idx < 0 or idx >= len(self.models):
-            self.notify("Navigate to a model first.", severity="warning")
+        if not self._is_on_model_view() or idx >= len(self.models):
             return
-        switcher = self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher)
-        if not switcher.current or not str(switcher.current).startswith("model-"):
-            self.notify("Navigate to a model first.", severity="warning")
-            return
-        context = self._detect_vote_context()
-        self._apply_vote(idx, context, delta)
+        self._apply_vote(idx, context=self._detect_vote_context(), delta=delta)
 
     def action_vote_up(self) -> None:
         self._vote(1)
@@ -739,12 +1061,21 @@ class StarfleetApp(App):
         self.scores = [ModelScores() for _ in range(len(self.models))]
         self.notify("Local annotations and scores reset.")
 
-    def _history(self) -> list | dict:
-        result: list | dict = self.data.get("history", [])
-        return result
-
     def rankings_summary(self) -> str:
-        return ranking.rankings_summary(self.scores, self._history())
+        if self.task_type == TaskType.PROJECT_PROPOSAL and self.proposal:
+            p = self.proposal
+            parts = []
+            if p.solved:
+                color = {"full": "green", "partial": "yellow", "no": "red"}.get(p.solved, "white")
+                parts.append(f"[{color}]{p.solved}[/{color}]")
+            if p.duration:
+                parts.append(f"[dim]{p.duration}[/dim]")
+            if p.trace_elapsed_ms:
+                parts.append(f"[bold]{_format_duration(p.trace_elapsed_ms)} actual[/bold]")
+            if p.rubrics:
+                parts.append(f"[dim]{len(p.rubrics)} rubrics[/dim]")
+            return "  |  ".join(parts) if parts else ""
+        return ranking.rankings_summary(self.scores, self.data.get("history", []))
 
     def _update_scoreboard(self) -> None:
         try:
@@ -754,7 +1085,7 @@ class StarfleetApp(App):
         board.update(self.rankings_summary())
 
         has_local_votes = any(s.any_nonzero() for s in self.scores)
-        history = self._history()
+        history = self.data.get("history", [])
 
         for idx in range(len(self.models)):
             letter = model_letter(idx)
@@ -796,15 +1127,12 @@ class StarfleetApp(App):
             rankings = self.query_one(f"#{ids.JUST_RANKINGS}", Static)
             rankings.update(self.rankings_summary())
             preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
-            preview.update(
-                self.summary_text
-                or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*"
-            )
+            preview.update(self.summary_text or self._EMPTY_SUMMARY)
         except Exception:
             pass
 
     async def action_edit_justification(self) -> None:
-        """Navigate to overview, switch to Current tab, and activate the editor."""
+        """Navigate to overview/current tab and activate the editor."""
         await self.go_to("overview")
         try:
             tabs = self.query_one(f"#{ids.TABS_OVERVIEW}", TabbedContent)
@@ -833,10 +1161,7 @@ class StarfleetApp(App):
         if editor.display:
             self._save_summary(editor.text)
             editor.display = False
-            preview.update(
-                self.summary_text
-                or "*No summary yet -- press ctrl+e to write one, y to yank snippets.*"
-            )
+            preview.update(self.summary_text or self._EMPTY_SUMMARY)
             preview.display = True
 
     def on_key(self, event) -> None:
@@ -913,9 +1238,15 @@ class StarfleetApp(App):
         self.notify("Refreshing...")
         new_data = fetch_data(self.task_arg, self.cookies)
         self.data = new_data
-        self.parsed = parse_content(new_data.get("content", {}))
-        self.models = self.parsed.models
-        self.task_id = new_data.get("task", {}).get("taskId") or self.parsed.task_id or self.task_id
+        self.task_type = detect_task_type(new_data)
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            self.proposal = parse_proposal(self._get_history(), new_data.get("trace"))
+        else:
+            self.parsed = parse_content(new_data.get("content", {}))
+            self.models = self.parsed.models
+        self.task_id = (
+            new_data.get("task", {}).get("taskId") or self.parsed.task_id or self.task_id
+        )
         self.sub_title = f"Task {self.task_id} (refreshed)"
         self.refresh(recompose=True)
         self.notify("Data refreshed.")

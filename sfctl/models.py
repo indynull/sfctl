@@ -107,6 +107,33 @@ class ParsedContent:
 
 
 @dataclass(slots=True)
+class ProposalData:
+    """Parsed data for a project proposal task."""
+
+    repo_url: str = ""
+    repo_description: str = ""
+    prompt: str = ""
+    difficulty: str = ""
+    familiarity: str = ""
+    rubrics: list[str] = field(default_factory=list)
+    duration: str = ""
+    solved: str = ""
+    issues: str = ""
+    issue_comments: list[dict] = field(default_factory=list)
+    domain: str = ""
+    code_patch: str = ""
+    bash_history: list[dict] = field(default_factory=list)
+    setup_commands: list[dict] = field(default_factory=list)
+    file_diffs: list[FileDiff] = field(default_factory=list)
+    model_id: str = ""
+    trace_ref: str = ""
+    trace_summary: str = ""
+    trace_elapsed_ms: int | None = None
+    tool_events: list = field(default_factory=list)
+    messages: list = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class Annotation:
     """A single note about a model -- a yank, a vote, or both."""
 
@@ -171,6 +198,4 @@ class CookieProfile(NamedTuple):
     path: str
     label: str
     func: str
-
-
 

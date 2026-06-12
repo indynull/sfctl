@@ -183,6 +183,29 @@ class TestRequestWithRetry:
                 await _request_with_retry(client, "GET", "http://x", "Test")
 
 
+class TestTraceUrl:
+    def test_standard_trace_ref(self):
+        from sfctl.api import _trace_url
+
+        url = _trace_url(
+            "https://starfleet-backend.teachx.ai",
+            "coding-question/prod-hades-worker-abc/hds-123/trace.json",
+        )
+        assert url == "https://starfleet-backend.teachx.ai/coding-question/trace/prod-hades-worker-abc%2Fhds-123"
+
+    def test_no_prefix(self):
+        from sfctl.api import _trace_url
+
+        url = _trace_url("https://api.example.com", "worker-x/sess-y/trace.json")
+        assert url == "https://api.example.com/coding-question/trace/worker-x%2Fsess-y"
+
+    def test_bare_path(self):
+        from sfctl.api import _trace_url
+
+        url = _trace_url("https://api.example.com", "coding-question/w1/s1")
+        assert url == "https://api.example.com/coding-question/trace/w1%2Fs1"
+
+
 class TestFetchDataAsync:
     @pytest.mark.asyncio
     async def test_fetch_data_async(self, fixture_data):

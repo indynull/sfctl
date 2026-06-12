@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 import browser_cookie3
 import httpx
@@ -78,6 +79,47 @@ async def _request_with_retry(
     raise last_exc  # type: ignore[misc]
 
 
+def _trace_url(api_base: str, trace_ref: str) -> str:
+    """Build the trace fetch URL from a traceRef path.
+
+    traceRef looks like ``coding-question/{worker}/{session}/trace.json``.
+    The API endpoint is ``{base}/coding-question/trace/{worker}%2F{session}``.
+    """
+    path = trace_ref
+    for prefix in ("coding-question/",):
+        if path.startswith(prefix):
+            path = path[len(prefix) :]
+    path = path.removesuffix("/trace.json").removesuffix("trace.json")
+    path = path.strip("/")
+    return f"{api_base}/coding-question/trace/{quote(path, safe='')}"
+
+
+async def _fetch_trace(
+    client: httpx.AsyncClient, api_base: str, trace_ref: str
+) -> dict:
+    """Fetch a trace JSON from a traceRef path. Returns empty dict on failure."""
+    if not trace_ref:
+        return {}
+    url = _trace_url(api_base, trace_ref)
+    try:
+        resp = await _request_with_retry(client, "GET", url, "Trace fetch")
+        return resp.json()
+    except Exception:
+        return {}
+
+
+def _extract_trace_ref(data: dict) -> str:
+    """Extract traceRef from history data (for proposal tasks)."""
+    history = data.get("history", [])
+    if not isinstance(history, list):
+        history = [history]
+    if not history:
+        return ""
+    cq = history[-1].get("coding_question", {})
+    rollout = cq.get("rollouts", {}).get("A") or cq.get("rolloutA") or cq.get("rollout") or {}
+    return rollout.get("traceRef", "")
+
+
 async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
     """Fetch all task data concurrently using httpx with retries."""
     api_base = get_api_base()
@@ -106,10 +148,19 @@ async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
             ),
         )
 
-    task_resp = r_task.json()
-    history = r_history.json()
-    feedback = r_feedback.json()
-    content = r_content.json()
+        task_resp = r_task.json()
+        history = r_history.json()
+        feedback = r_feedback.json()
+        content = r_content.json()
+
+        # For proposal tasks, fetch the trace if available
+        result = {
+            "task": task_resp, "history": history,
+            "feedback": feedback, "content": content,
+        }
+        trace_ref = _extract_trace_ref(result)
+        if trace_ref:
+            result["trace"] = await _fetch_trace(client, api_base, trace_ref)
 
     TaskResponse.model_validate(task_resp)
     if isinstance(history, list):
@@ -120,7 +171,7 @@ async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
     FeedbackResponse.model_validate(feedback)
     ContentResponse.model_validate(content)
 
-    return {"task": task_resp, "history": history, "feedback": feedback, "content": content}
+    return result
 
 
 def fetch_data(task: str, cookies: dict[str, str]) -> dict:

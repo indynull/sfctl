@@ -51,6 +51,45 @@ class TestAnnotationPersistence:
         assert all(len(a) == 0 for a in anns)
         assert summary == ""
 
+    def test_load_annotations_seeds_from_history(self):
+        from sfctl.scoring import load_annotations
+
+        history = [
+            {"justification": {"_sf_rich": True, "value": "L0 justification"}, "reviewLevel": 0},
+            {"justification": {"_sf_rich": True, "value": "L1 revised justification"}, "reviewLevel": 1},
+        ]
+        _anns, summary = load_annotations("t-nonexistent-history-seed", 3, history)
+        assert summary == "L1 revised justification"
+
+    def test_load_annotations_updates_on_new_revision(self):
+        from sfctl.models import Annotation
+        from sfctl.scoring import load_annotations, save_annotations
+
+        anns = [[Annotation(context="code", sentiment=1)], [], []]
+        save_annotations("t-revision-test", anns, "L0 justification", "L0 justification")
+
+        l1_history = [
+            {"justification": {"_sf_rich": True, "value": "L0 justification"}, "reviewLevel": 0},
+            {"justification": {"_sf_rich": True, "value": "L1 revised justification"}, "reviewLevel": 1},
+        ]
+        loaded_anns, summary = load_annotations("t-revision-test", 3, l1_history)
+        assert summary == "L1 revised justification"
+        assert len(loaded_anns[0]) == 1
+        assert loaded_anns[0][0].sentiment == 1
+
+    def test_load_annotations_keeps_local_when_server_unchanged(self):
+        from sfctl.models import Annotation
+        from sfctl.scoring import load_annotations, save_annotations
+
+        history = [
+            {"justification": {"_sf_rich": True, "value": "server just"}, "reviewLevel": 0},
+        ]
+        anns = [[Annotation(context="code", sentiment=1)], [], []]
+        save_annotations("t-keep-local", anns, "my custom edits", "server just")
+
+        _loaded_anns, summary = load_annotations("t-keep-local", 3, history)
+        assert summary == "my custom edits"
+
     def test_scores_from_annotations(self):
         from sfctl.models import Annotation
         from sfctl.scoring import scores_from_annotations

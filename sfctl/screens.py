@@ -12,6 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, Static, TextArea
 
 from sfctl import ids
+from sfctl.parsing import format_event_line
 
 if TYPE_CHECKING:
     from sfctl.models import FileDiff
@@ -119,6 +120,204 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         filename = str(event.option.prompt)
         self.dismiss((self.model_index, filename))
+
+
+class EventSearchModal(ModalScreen[int | None]):
+    """Fuzzy search over trace events by name/title."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Cancel"),
+    ]
+
+    def __init__(self, events: list[dict]):
+        super().__init__()
+        self.events = events
+        self._indices: list[int] = list(range(len(events)))
+
+    @staticmethod
+    def _event_label(ev: dict) -> str:
+        from rich.text import Text
+
+        return Text.from_markup(format_event_line(ev)).plain
+
+    def compose(self) -> ComposeResult:
+        with Container(id=ids.EVENT_SEARCH_MODAL):
+            yield Input(placeholder="search events...", id=ids.EVENT_SEARCH_INPUT)
+            yield OptionList(
+                *[self._event_label(ev) for ev in self.events],
+                id=ids.EVENT_SEARCH_LIST,
+            )
+
+    def on_mount(self) -> None:
+        self.query_one(f"#{ids.EVENT_SEARCH_INPUT}", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        query = event.value.strip()
+        option_list = self.query_one(f"#{ids.EVENT_SEARCH_LIST}", OptionList)
+        option_list.clear_options()
+        if not query:
+            self._indices = list(range(len(self.events)))
+            for i in self._indices:
+                option_list.add_option(self._event_label(self.events[i]))
+        else:
+            matcher = Matcher(query)
+            scored = []
+            for i, ev in enumerate(self.events):
+                label = self._event_label(ev)
+                score = matcher.match(label)
+                if score > 0:
+                    scored.append((score, i))
+            scored.sort(key=lambda x: -x[0])
+            self._indices = [i for _, i in scored]
+            for i in self._indices:
+                option_list.add_option(self._event_label(self.events[i]))
+        if option_list.option_count > 0:
+            option_list.highlighted = 0
+
+    def _dismiss_selected(self, highlighted: int | None) -> None:
+        if highlighted is not None and 0 <= highlighted < len(self._indices):
+            self.dismiss(self._indices[highlighted])
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        option_list = self.query_one(f"#{ids.EVENT_SEARCH_LIST}", OptionList)
+        if option_list.option_count > 0:
+            self._dismiss_selected(option_list.highlighted)
+
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        idx = event.option_index
+        self._dismiss_selected(idx)
+
+
+class GrepDiffsModal(ModalScreen[tuple[int, str] | None]):
+    """Substring search across diff content, like ripgrep for diffs.
+
+    Dismisses with (model_index, filename) on selection, None on cancel.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Cancel"),
+    ]
+
+    def __init__(self, model_index: int, file_diffs: list[FileDiff]):
+        super().__init__()
+        self.model_index = model_index
+        self.file_diffs = file_diffs
+        self._results: list[tuple[str, str]] = []
+
+    def compose(self) -> ComposeResult:
+        with Container(id=ids.GREP_DIFFS_MODAL):
+            yield Input(placeholder="grep diffs...", id=ids.GREP_DIFFS_INPUT)
+            yield OptionList(id=ids.GREP_DIFFS_LIST)
+
+    def on_mount(self) -> None:
+        self.query_one(f"#{ids.GREP_DIFFS_INPUT}", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        query = event.value.strip().lower()
+        option_list = self.query_one(f"#{ids.GREP_DIFFS_LIST}", OptionList)
+        option_list.clear_options()
+        self._results = []
+        if not query:
+            return
+        for fd in self.file_diffs:
+            for line in fd.diff.splitlines():
+                if query in line.lower():
+                    label = f"{fd.filename}: {line.strip()[:120]}"
+                    if len(self._results) < 200:
+                        self._results.append((fd.filename, label))
+                        option_list.add_option(label)
+        if option_list.option_count > 0:
+            option_list.highlighted = 0
+
+    def _dismiss_selected(self, highlighted: int | None) -> None:
+        if highlighted is not None and 0 <= highlighted < len(self._results):
+            filename = self._results[highlighted][0]
+            self.dismiss((self.model_index, filename))
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        option_list = self.query_one(f"#{ids.GREP_DIFFS_LIST}", OptionList)
+        if option_list.option_count > 0:
+            self._dismiss_selected(option_list.highlighted)
+
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self._dismiss_selected(event.option_index)
+
+
+class GrepEventsModal(ModalScreen[int | None]):
+    """Substring search across event input/output content.
+
+    Dismisses with the event index on selection, None on cancel.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Cancel"),
+    ]
+
+    def __init__(self, events: list[dict]):
+        super().__init__()
+        self.events = events
+        self._indices: list[int] = []
+
+    @staticmethod
+    def _event_label(ev: dict) -> str:
+        from rich.text import Text
+
+        return Text.from_markup(format_event_line(ev)).plain
+
+    @staticmethod
+    def _searchable_text(ev: dict) -> str:
+        parts = []
+        for key in ("input", "output", "name", "title"):
+            val = ev.get(key, "")
+            if isinstance(val, dict):
+                import json
+                parts.append(json.dumps(val))
+            elif val:
+                parts.append(str(val))
+        return "\n".join(parts).lower()
+
+    def compose(self) -> ComposeResult:
+        with Container(id=ids.GREP_EVENTS_MODAL):
+            yield Input(placeholder="grep events...", id=ids.GREP_EVENTS_INPUT)
+            yield OptionList(id=ids.GREP_EVENTS_LIST)
+
+    def on_mount(self) -> None:
+        self.query_one(f"#{ids.GREP_EVENTS_INPUT}", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        query = event.value.strip().lower()
+        option_list = self.query_one(f"#{ids.GREP_EVENTS_LIST}", OptionList)
+        option_list.clear_options()
+        self._indices = []
+        if not query:
+            return
+        for i, ev in enumerate(self.events):
+            text = self._searchable_text(ev)
+            if query in text:
+                match_line = ""
+                for line in text.splitlines():
+                    if query in line:
+                        match_line = line.strip()[:100]
+                        break
+                label = f"{self._event_label(ev)}  |  {match_line}"
+                self._indices.append(i)
+                option_list.add_option(label)
+                if len(self._indices) >= 200:
+                    break
+        if option_list.option_count > 0:
+            option_list.highlighted = 0
+
+    def _dismiss_selected(self, highlighted: int | None) -> None:
+        if highlighted is not None and 0 <= highlighted < len(self._indices):
+            self.dismiss(self._indices[highlighted])
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        option_list = self.query_one(f"#{ids.GREP_EVENTS_LIST}", OptionList)
+        if option_list.option_count > 0:
+            self._dismiss_selected(option_list.highlighted)
+
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self._dismiss_selected(event.option_index)
 
 
 class HelpModal(ModalScreen):
