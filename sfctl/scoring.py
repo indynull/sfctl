@@ -64,6 +64,17 @@ def _migrate_legacy(task_id: str, num_models: int) -> tuple[list[list[Annotation
     return annotations, summary
 
 
+def _latest_server_justification(history: list | None) -> str:
+    """Extract the justification from the latest history entry."""
+    if not history:
+        return ""
+    h = history if isinstance(history, list) else [history]
+    if not h:
+        return ""
+    last_just = (h[-1].get("justification") or {}).get("value", "")
+    return last_just if isinstance(last_just, str) else ""
+
+
 def load_annotations(
     task_id: str, num_models: int, history: list | None = None
 ) -> tuple[list[list[Annotation]], str]:
@@ -71,46 +82,48 @@ def load_annotations(
 
     Returns (per-model annotation lists, summary text).
     Falls back to legacy scores/justification if no annotations file exists.
+
+    The summary always reflects the latest server justification when it has
+    changed since the local copy was saved, so new revisions are picked up.
     """
+    server_just = _latest_server_justification(history)
+
     path = annotations_path(task_id)
     if path.exists():
         data = json.loads(path.read_text())
-        summary = data.get("summary", "")
+        local_summary = data.get("summary", "")
+        prev_server = data.get("_server_justification", "")
         annotations: list[list[Annotation]] = []
         for i in range(num_models):
             raw = data.get(str(i), [])
             annotations.append([Annotation.from_dict(d) for d in raw])
-        return annotations, summary
+        if server_just and server_just != prev_server:
+            return annotations, server_just
+        return annotations, local_summary
 
     # Check legacy files
     sp = scores_path(task_id)
     jp = justification_path(task_id)
     if sp.exists() or jp.exists():
         annotations, summary = _migrate_legacy(task_id, num_models)
-        # If legacy justification is empty, try history
-        if not summary.strip() and history:
-            h = history if isinstance(history, list) else [history]
-            if h:
-                last_just = (h[-1].get("justification") or {}).get("value", "")
-                if isinstance(last_just, str) and last_just.strip():
-                    summary = last_just
+        if not summary.strip() and server_just.strip():
+            summary = server_just
         return annotations, summary
 
-    # No local data at all -- try history for initial summary
-    summary = ""
-    if history:
-        h = history if isinstance(history, list) else [history]
-        if h:
-            last_just = (h[-1].get("justification") or {}).get("value", "")
-            if isinstance(last_just, str) and last_just.strip():
-                summary = last_just
-    return [[] for _ in range(num_models)], summary
+    # No local data at all -- use server justification
+    return [[] for _ in range(num_models)], server_just
 
 
-def save_annotations(task_id: str, annotations: list[list[Annotation]], summary: str) -> None:
+def save_annotations(
+    task_id: str,
+    annotations: list[list[Annotation]],
+    summary: str,
+    server_justification: str = "",
+) -> None:
     """Persist annotations and summary to disk."""
     data: dict = {}
     for i, model_anns in enumerate(annotations):
         data[str(i)] = [a.to_dict() for a in model_anns]
     data["summary"] = summary
+    data["_server_justification"] = server_justification
     annotations_path(task_id).write_text(json.dumps(data, indent=2))

@@ -59,6 +59,7 @@ from sfctl.parsing import (
     trace_type_color,
 )
 from sfctl.scoring import (
+    _latest_server_justification,
     annotations_path,
     justification_path,
     load_annotations,
@@ -126,6 +127,7 @@ class StarfleetApp(App):
         self.annotations, self.summary_text = load_annotations(
             self.task_id, len(self.models), history
         )
+        self._server_justification = _latest_server_justification(history)
         self.scores: list[ModelScores] = scores_from_annotations(self.annotations)
         self._populated_models: set[int] = set()
         self._overview_populated = False
@@ -359,7 +361,12 @@ class StarfleetApp(App):
                 if not changed and not entry_fb:
                     continue
 
-                kind = "revision" if changed else "review"
+                prev = history[orig_idx - 1] if orig_idx > 0 else None
+                if entry.get("isEditAction") and prev is not None:
+                    kind = "edit"
+                    level = prev.get("reviewLevel", level)
+                else:
+                    kind = "revision" if changed else "review"
                 pane = TabPane(f"L{level} {kind}", id=tab_entry_id(tab_idx))
                 await tabs.add_pane(pane)
 
@@ -774,12 +781,12 @@ class StarfleetApp(App):
         if 0 <= model_index < len(self.annotations):
             self.annotations[model_index].append(annotation)
         self.scores = scores_from_annotations(self.annotations)
-        save_annotations(self.task_id, self.annotations, self.summary_text)
+        save_annotations(self.task_id, self.annotations, self.summary_text, self._server_justification)
 
     def _save_summary(self, text: str) -> None:
         """Update the summary text and persist."""
         self.summary_text = text
-        save_annotations(self.task_id, self.annotations, self.summary_text)
+        save_annotations(self.task_id, self.annotations, self.summary_text, self._server_justification)
 
     def _refresh_overview_annotations(self) -> None:
         """Refresh the overview summary and rankings."""
