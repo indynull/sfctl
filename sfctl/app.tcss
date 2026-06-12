@@ -2,7 +2,7 @@ Screen { background: $surface; }
 
 /* Section labels */
 .section-title { text-style: bold; color: $accent; margin: 1 0 0 0; }
-.view-header   { text-style: bold; color: $text; background: $primary; margin: 0 0 1 0; padding: 0 2; text-align: center; }
+.view-header   { dock: top; text-style: bold; color: $text; background: $primary; padding: 0 2; text-align: center; }
 .info-row      { margin: 0 1; }
 .status        { color: $text-muted; text-style: italic; }
 
