@@ -32,14 +32,22 @@ def extract_task_id(task: str) -> str:
 
 
 class AuthError(Exception):
-    """Raised when the API returns an authentication error."""
+    """Raised when the API returns an authentication error (403 / expired cookies)."""
+
+
+class AccessError(Exception):
+    """Raised when the API returns 401 (authenticated but not authorized)."""
 
 
 def _check_response(resp: httpx.Response, label: str) -> None:
-    """Raise AuthError on 401/403, or raise for other HTTP errors."""
-    if resp.status_code in (401, 403):
+    """Raise AccessError on 401, AuthError on 403, or raise for other HTTP errors."""
+    if resp.status_code == 401:
+        raise AccessError(
+            f"{label}: HTTP 401. You don't have access to this resource."
+        )
+    if resp.status_code == 403:
         raise AuthError(
-            f"{label}: HTTP {resp.status_code}. Your cookies may be expired or from the wrong profile.\n"
+            f"{label}: HTTP 403. Your cookies may be expired or from the wrong profile.\n"
             f"Run: sfctl --clear-config cookie_file"
         )
     resp.raise_for_status()

@@ -112,7 +112,7 @@ def main():
     if not args.task:
         parser.error("task is required (or use --fixture / --show-config / --set / --clear-config)")
 
-    from sfctl.api import AuthError, fetch_data, resolve_cookies
+    from sfctl.api import AccessError, AuthError, fetch_data, resolve_cookies
 
     cookies, using_token = resolve_cookies(args.cookie_file, args.verbose, token_arg=args.token)
 
@@ -123,6 +123,9 @@ def main():
 
     try:
         data = fetch_data(args.task, cookies)
+    except AccessError as e:
+        print(f"\nError: {e}", file=sys.stderr)
+        raise SystemExit(1) from None
     except AuthError as e:
         print(f"\nError: {e}", file=sys.stderr)
         if using_token:

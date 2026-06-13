@@ -59,11 +59,11 @@ class TestDomainMatching:
 
 
 class TestCheckResponse:
-    def test_401_raises_auth_error(self):
-        from sfctl.api import AuthError, _check_response
+    def test_401_raises_access_error(self):
+        from sfctl.api import AccessError, _check_response
 
         resp = httpx.Response(401, request=httpx.Request("GET", "http://x"))
-        with pytest.raises(AuthError, match="401"):
+        with pytest.raises(AccessError, match="401"):
             _check_response(resp, "Test")
 
     def test_403_raises_auth_error(self):
@@ -117,12 +117,12 @@ class TestRequestWithRetry:
             assert call_count == 3
 
     @pytest.mark.asyncio
-    async def test_auth_error_no_retry(self):
-        from sfctl.api import AuthError, _request_with_retry
+    async def test_access_error_no_retry(self):
+        from sfctl.api import AccessError, _request_with_retry
 
         transport = httpx.MockTransport(lambda r: httpx.Response(401, request=r))
         async with httpx.AsyncClient(transport=transport) as client:
-            with pytest.raises(AuthError):
+            with pytest.raises(AccessError):
                 await _request_with_retry(client, "GET", "http://x/auth", "Test")
 
     @pytest.mark.asyncio
@@ -166,7 +166,7 @@ class TestRequestWithRetry:
 
     @pytest.mark.asyncio
     async def test_502_then_401(self):
-        from sfctl.api import AuthError, _request_with_retry
+        from sfctl.api import AccessError, _request_with_retry
 
         call_count = 0
 
@@ -179,7 +179,7 @@ class TestRequestWithRetry:
 
         transport = httpx.MockTransport(handler)
         async with httpx.AsyncClient(transport=transport) as client:
-            with pytest.raises(AuthError):
+            with pytest.raises(AccessError):
                 await _request_with_retry(client, "GET", "http://x", "Test")
 
 
