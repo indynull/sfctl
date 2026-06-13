@@ -8,6 +8,7 @@ from rich.style import Style
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, ScrollableContainer
+from textual.content import Content
 from textual.fuzzy import Matcher
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, Static, TextArea
@@ -16,6 +17,35 @@ from sfctl import ids
 from sfctl.parsing import format_event_line
 
 _MATCH_STYLE = Style(bold=True, color="cyan")
+
+
+def _fuzzy_score_and_highlight(
+    query: str, candidate: str, matcher: Matcher,
+) -> tuple[float, Content | str]:
+    """Score a candidate with subsequence matching + token-substring fallback.
+
+    Returns (score, highlighted_content).  Score <= 0 means no match.
+    Subsequence results get character-level highlighting; token fallback
+    results are returned as plain strings.
+    """
+    import re
+
+    from rapidfuzz import fuzz
+
+    sub_score = matcher.match(candidate)
+    if sub_score > 0:
+        return sub_score, matcher.highlight(candidate)
+    cl = candidate.lower()
+    best = 0.0
+    for token in re.split(r"[_\-./\s]+", query):
+        if len(token) < 2:
+            continue
+        tl = token.lower()
+        if tl in cl:
+            best = max(best, fuzz.ratio(tl, cl))
+    if best >= 40:
+        return best, candidate
+    return 0, candidate
 
 if TYPE_CHECKING:
     from sfctl.models import FileDiff
@@ -132,14 +162,14 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
         else:
             matcher = Matcher(query, match_style=_MATCH_STYLE)
             scored = [
-                (matcher.match(fd.filename), fd.filename)
+                (*_fuzzy_score_and_highlight(query, fd.filename, matcher), fd.filename)
                 for fd in self.file_diffs
             ]
             scored.sort(key=lambda x: -x[0])
-            for s, n in scored:
+            for s, display, n in scored:
                 if s > 0:
                     self._result_filenames.append(n)
-                    new_options.append(matcher.highlight(n))
+                    new_options.append(display)
 
         option_list.set_options(new_options)
         if option_list.option_count > 0:
@@ -250,15 +280,15 @@ class EventSearchModal(ModalScreen[int | None]):
             new_options = [self._event_label(self.events[i]) for i in self._indices]
         else:
             matcher = Matcher(query, match_style=_MATCH_STYLE)
-            scored: list[tuple[float, int]] = []
+            scored: list[tuple[float, Content | str, int]] = []
             for i, ev in enumerate(self.events):
                 label = self._event_label(ev)
-                score = matcher.match(label)
+                score, display = _fuzzy_score_and_highlight(query, label, matcher)
                 if score > 0:
-                    scored.append((score, i, label))
+                    scored.append((score, display, i))
             scored.sort(key=lambda x: -x[0])
-            self._indices = [i for _, i, _ in scored]
-            new_options = [matcher.highlight(label) for _, _, label in scored]
+            self._indices = [i for _, _, i in scored]
+            new_options = [display for _, display, _ in scored]
 
         option_list.set_options(new_options)
         if option_list.option_count > 0:
