@@ -102,24 +102,23 @@ class StarfleetApp(App):
             self._refresh_vote_labels(idx)
 
     BINDINGS = [
-        Binding("q", "quit", "Quit", show=True),
+        Binding("0", "go_to('overview')", "Overview", show=True),
         Binding("1", "go_model(0)", "A", show=True),
         Binding("2", "go_model(1)", "B", show=True),
         Binding("3", "go_model(2)", "C", show=True),
-        Binding("0", "go_to('overview')", "Overview", show=True),
-        Binding("ctrl+e", "edit_justification", "Edit", show=True),
+        Binding("m", "go_model_proposal", "Model", show=True),
         Binding("+", "vote_up", f"{ARROW_UP} Up", show=True),
         Binding("-", "vote_down", f"{ARROW_DOWN} Down", show=True),
+        Binding("ctrl+e", "edit_justification", "Edit", show=True),
         Binding("ctrl+f", "search_diffs", "Find File", show=True),
         Binding("ctrl+g", "search_events", "Find Event", show=True),
-
-        Binding("m", "go_model_proposal", "Model"),
-        Binding("c", "copy_summary", "Copy", show=True),
         Binding("e", "toggle_collapse", "Fold", show=True),
+        Binding("c", "copy_summary", "Copy", show=True),
+        Binding("y", "yank_file", "Yank", show=True),
+        Binding("r", "refresh_data", "Refresh", show=True),
+        Binding("ctrl+r", "reset_local", "Reset", show=True),
         Binding("?", "help", "Help", show=True),
-        Binding("y", "yank_file", "Yank"),
-        Binding("r", "refresh_data", "Refresh"),
-        Binding("ctrl+r", "reset_local", "Reset"),
+        Binding("q", "quit", "Quit", show=True),
         Binding("tab", "next_tab", "Next Tab", show=False, priority=True),
         Binding("shift+tab", "prev_tab", "Prev Tab", show=False, priority=True),
     ]
@@ -707,11 +706,23 @@ class StarfleetApp(App):
         return self._current_section == ids.OVERVIEW
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if self.task_type == TaskType.PROJECT_PROPOSAL:
-            return action not in (
-                "vote_up", "vote_down", "go_model",
-                "edit_justification", "copy_summary",
-            ) and (action != "search_diffs" or self._is_on_model_view())
+        is_proposal = self.task_type == TaskType.PROJECT_PROPOSAL
+
+        # Hide bindings that don't apply to this task type
+        if is_proposal and action in (
+            "go_model", "vote_up", "vote_down",
+            "edit_justification", "copy_summary",
+            "yank_file", "reset_local",
+        ):
+            return False
+        if not is_proposal and action == "go_model_proposal":
+            return False
+
+        # Context-sensitive enable/disable
+        if is_proposal:
+            if action == "search_diffs":
+                return self._is_on_model_view()
+            return True
 
         if action in ("vote_up", "vote_down", "search_diffs"):
             return self._is_on_model_view()
