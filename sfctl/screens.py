@@ -5,11 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from rich.style import Style
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, ScrollableContainer
-from textual.content import Content
-from textual.fuzzy import Matcher
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, Static, TextArea
 
@@ -18,34 +17,119 @@ from sfctl.parsing import format_event_line
 
 _MATCH_STYLE = Style(bold=True, color="cyan")
 
+_SCORE_MATCH = 16
+_BONUS_BOUNDARY = 8
+_BONUS_BOUNDARY_WHITE = 10
+_BONUS_CAMEL = 10
+_BONUS_CONSECUTIVE = 4
+_BONUS_FIRST_MULT = 2
+_PENALTY_GAP_START = -3
+_PENALTY_GAP_EXTEND = -1
+_BOUNDARY_CHARS = frozenset("/-_. ,;:\\")
 
-def _fuzzy_score_and_highlight(
-    query: str, candidate: str, matcher: Matcher,
-) -> tuple[float, Content | str]:
-    """Score a candidate with subsequence matching + token-substring fallback.
 
-    Returns (score, highlighted_content).  Score <= 0 means no match.
-    Subsequence results get character-level highlighting; token fallback
-    results are returned as plain strings.
+def _char_bonus(prev: str | None, curr: str) -> int:
+    """Compute fzf-style position bonus for a character."""
+    if prev is None:
+        return _BONUS_BOUNDARY_WHITE
+    if prev in _BOUNDARY_CHARS:
+        return _BONUS_BOUNDARY_WHITE if prev in (" ", "\t") else _BONUS_BOUNDARY
+    if prev.islower() and curr.isupper():
+        return _BONUS_CAMEL
+    return 0
+
+
+def _fzf_score(query: str, candidate: str) -> tuple[float, list[int]]:
+    """fzf-style fuzzy match: subsequence with boundary/consecutive bonuses.
+
+    Returns (score, matched_positions).  Score <= 0 means no match.
     """
+    ql = query.lower()
+    cl = candidate.lower()
+    n, m = len(cl), len(ql)
+    if m == 0:
+        return 0, []
+    if m > n:
+        return 0, []
+
+    # Forward pass: find a valid subsequence (greedy left-to-right)
+    positions: list[int] = []
+    j = 0
+    for i in range(n):
+        if j < m and cl[i] == ql[j]:
+            positions.append(i)
+            j += 1
+    if j < m:
+        return 0, []
+
+    # Score the alignment with bonuses
+    score = 0.0
+    consecutive = 0
+    for k, pos in enumerate(positions):
+        prev = candidate[pos - 1] if pos > 0 else None
+        bonus = _char_bonus(prev, candidate[pos])
+        char_score = _SCORE_MATCH + bonus
+        if k == 0 and bonus > 0:
+            char_score += bonus * (_BONUS_FIRST_MULT - 1)
+        if consecutive > 0:
+            char_score += _BONUS_CONSECUTIVE
+        else:
+            gap = pos - (positions[k - 1] + 1) if k > 0 else 0
+            if gap > 0:
+                char_score += _PENALTY_GAP_START + _PENALTY_GAP_EXTEND * (gap - 1)
+        # Exact case match bonus
+        if query[k] == candidate[pos]:
+            char_score += 1
+        score += max(0, char_score)
+        if k > 0 and pos == positions[k - 1] + 1:
+            consecutive += 1
+        else:
+            consecutive = 0
+
+    return score, positions
+
+
+def _highlight(text: str, positions: list[int]) -> Text:
+    """Build a Rich Text with matched positions highlighted."""
+    result = Text(text)
+    for pos in positions:
+        result.stylize(_MATCH_STYLE, pos, pos + 1)
+    return result
+
+
+def fzf_match(query: str, candidate: str) -> tuple[float, Text]:
+    """Full fzf-style fuzzy match with highlighting.
+
+    Returns (score, highlighted_text).  Score <= 0 means no match.
+    Falls back to token-substring matching when subsequence fails.
+    """
+    score, positions = _fzf_score(query, candidate)
+    if score > 0:
+        return score, _highlight(candidate, positions)
+    # Fallback: check if any query token is a substring of candidate
+    ql = query.lower()
+    cl = candidate.lower()
+    best_score = 0.0
+    best_positions: list[int] = []
+    for token in _split_tokens(ql):
+        idx = cl.find(token)
+        if idx >= 0:
+            t_positions = list(range(idx, idx + len(token)))
+            bonus = _char_bonus(candidate[idx - 1] if idx > 0 else None, candidate[idx])
+            t_score = len(token) * _SCORE_MATCH + bonus * 2
+            if t_score > best_score:
+                best_score = t_score
+                best_positions = t_positions
+    if best_score > 0:
+        return best_score, _highlight(candidate, best_positions)
+    return 0, Text(candidate)
+
+
+def _split_tokens(query: str) -> list[str]:
+    """Split a query into tokens on boundary characters."""
     import re
 
-    from rapidfuzz import fuzz
-
-    sub_score = matcher.match(candidate)
-    if sub_score > 0:
-        return sub_score, matcher.highlight(candidate)
-    cl = candidate.lower()
-    best = 0.0
-    for token in re.split(r"[_\-./\s]+", query):
-        if len(token) < 2:
-            continue
-        tl = token.lower()
-        if tl in cl:
-            best = max(best, fuzz.ratio(tl, cl))
-    if best >= 40:
-        return best, candidate
-    return 0, candidate
+    return [t for t in re.split(r"[_\-./\s]+", query) if len(t) >= 2]
 
 if TYPE_CHECKING:
     from sfctl.models import FileDiff
@@ -102,10 +186,22 @@ class YankCommentModal(ModalScreen[tuple[int, str] | None]):
         self.dismiss((self.model_index, block))
 
 
-class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
+class DiffSearchResult:
+    """Result from the diff search modal."""
+
+    __slots__ = ("filename", "grep_line", "model_index")
+
+    def __init__(self, model_index: int, filename: str, grep_line: str | None = None):
+        self.model_index = model_index
+        self.filename = filename
+        self.grep_line = grep_line
+
+
+class DiffSearchModal(ModalScreen[DiffSearchResult | None]):
     """File search with fuzzy filename matching and exact content grep.
 
-    Toggle between modes with ctrl+f. Dismisses with (model_index, filename).
+    Toggle between modes with ctrl+f.
+    Dismisses with DiffSearchResult (includes grep line for jumping).
     """
 
     BINDINGS = [
@@ -118,7 +214,7 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
         self.model_index = model_index
         self.file_diffs = file_diffs
         self._grep = False
-        self._result_filenames: list[str] = []
+        self._results: list[tuple[str, str | None]] = []
 
     def compose(self) -> ComposeResult:
         with Container(id=ids.DIFF_SEARCH_MODAL):
@@ -145,7 +241,7 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
     def _refresh_results(self, query_raw: str) -> None:
         query = query_raw.strip()
         option_list = self.query_one(f"#{ids.DIFF_SEARCH_LIST}", OptionList)
-        self._result_filenames = []
+        self._results = []
         new_options: list = []
 
         if self._grep:
@@ -153,23 +249,31 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
                 q = query.lower()
                 for fd in self.file_diffs:
                     for line in fd.diff.splitlines():
-                        if q in line.lower() and len(self._result_filenames) < 200:
-                            self._result_filenames.append(fd.filename)
-                            new_options.append(f"{fd.filename}: {line.strip()[:120]}")
+                        if q in line.lower() and len(self._results) < 200:
+                            self._results.append((fd.filename, line.strip()))
+                            display = Text(f"{fd.filename}: {line.strip()[:120]}")
+                            # Highlight the matched portion in the line part
+                            offset = len(fd.filename) + 2
+                            line_lower = line.strip()[:120].lower()
+                            mi = line_lower.find(q)
+                            if mi >= 0:
+                                display.stylize(
+                                    _MATCH_STYLE, offset + mi, offset + mi + len(q),
+                                )
+                            new_options.append(display)
         elif not query:
-            self._result_filenames = [fd.filename for fd in self.file_diffs]
-            new_options = list(self._result_filenames)
+            self._results = [(fd.filename, None) for fd in self.file_diffs]
+            new_options = [fd.filename for fd in self.file_diffs]
         else:
-            matcher = Matcher(query, match_style=_MATCH_STYLE)
-            scored = [
-                (*_fuzzy_score_and_highlight(query, fd.filename, matcher), fd.filename)
-                for fd in self.file_diffs
-            ]
+            scored: list[tuple[float, Text, str]] = []
+            for fd in self.file_diffs:
+                score, display = fzf_match(query, fd.filename)
+                if score > 0:
+                    scored.append((score, display, fd.filename))
             scored.sort(key=lambda x: -x[0])
-            for s, display, n in scored:
-                if s > 0:
-                    self._result_filenames.append(n)
-                    new_options.append(display)
+            for _, display, name in scored:
+                self._results.append((name, None))
+                new_options.append(display)
 
         option_list.set_options(new_options)
         if option_list.option_count > 0:
@@ -178,20 +282,21 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
     def on_input_changed(self, event: Input.Changed) -> None:
         self._refresh_results(event.value)
 
+    def _dismiss_at(self, idx: int) -> None:
+        if 0 <= idx < len(self._results):
+            filename, grep_line = self._results[idx]
+            self.dismiss(DiffSearchResult(self.model_index, filename, grep_line))
+
     def _dismiss_highlighted(self) -> None:
         option_list = self.query_one(f"#{ids.DIFF_SEARCH_LIST}", OptionList)
         if option_list.option_count > 0 and option_list.highlighted is not None:
-            idx = option_list.highlighted
-            if 0 <= idx < len(self._result_filenames):
-                self.dismiss((self.model_index, self._result_filenames[idx]))
+            self._dismiss_at(option_list.highlighted)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         self._dismiss_highlighted()
 
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        idx = event.option_index
-        if 0 <= idx < len(self._result_filenames):
-            self.dismiss((self.model_index, self._result_filenames[idx]))
+        self._dismiss_at(event.option_index)
 
 
 class EventSearchModal(ModalScreen[int | None]):
@@ -213,8 +318,6 @@ class EventSearchModal(ModalScreen[int | None]):
 
     @staticmethod
     def _event_label(ev: dict) -> str:
-        from rich.text import Text
-
         return Text.from_markup(format_event_line(ev)).plain
 
     @staticmethod
@@ -271,7 +374,13 @@ class EventSearchModal(ModalScreen[int | None]):
                             if q in line:
                                 match_line = line.strip()[:100]
                                 break
-                        new_options.append(f"{self._event_label(ev)}  |  {match_line}")
+                        label = self._event_label(ev)
+                        display = Text(f"{label}  |  {match_line}")
+                        mi = match_line.lower().find(q)
+                        if mi >= 0:
+                            offset = len(label) + 5
+                            display.stylize(_MATCH_STYLE, offset + mi, offset + mi + len(q))
+                        new_options.append(display)
                         self._indices.append(i)
                         if len(self._indices) >= 200:
                             break
@@ -279,11 +388,10 @@ class EventSearchModal(ModalScreen[int | None]):
             self._indices = list(range(len(self.events)))
             new_options = [self._event_label(self.events[i]) for i in self._indices]
         else:
-            matcher = Matcher(query, match_style=_MATCH_STYLE)
-            scored: list[tuple[float, Content | str, int]] = []
+            scored: list[tuple[float, Text, int]] = []
             for i, ev in enumerate(self.events):
                 label = self._event_label(ev)
-                score, display = _fuzzy_score_and_highlight(query, label, matcher)
+                score, display = fzf_match(query, label)
                 if score > 0:
                     scored.append((score, display, i))
             scored.sort(key=lambda x: -x[0])

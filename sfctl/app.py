@@ -73,6 +73,7 @@ from sfctl.scoring import (
 )
 from sfctl.screens import (
     DiffSearchModal,
+    DiffSearchResult,
     EventSearchModal,
     HelpModal,
     YankCommentModal,
@@ -739,8 +740,11 @@ class StarfleetApp(App):
                 await self._populate_model(i)
                 return
 
-    async def go_to_diff(self, model_index: int, filename: str) -> None:
-        if model_index >= len(self.models):
+    async def go_to_diff(
+        self, model_index: int, filename: str, grep_line: str | None = None,
+    ) -> None:
+        is_proposal = self.task_type == TaskType.PROJECT_PROPOSAL
+        if not is_proposal and model_index >= len(self.models):
             return
         mid = model_id(model_index)
         await self.go_to(mid)
@@ -751,8 +755,29 @@ class StarfleetApp(App):
         for collapsible in diffs_pane.query(Collapsible):
             if str(collapsible.title) == filename:
                 collapsible.collapsed = False
-                self.call_later(lambda c=collapsible: container.scroll_to_center(c))
+                if grep_line:
+                    self.call_later(
+                        lambda c=collapsible, gl=grep_line: self._scroll_to_grep_line(
+                            c, container, gl
+                        )
+                    )
+                else:
+                    self.call_later(lambda c=collapsible: container.scroll_to_center(c))
                 break
+
+    def _scroll_to_grep_line(
+        self, collapsible: Collapsible, container: ScrollableContainer, grep_line: str,
+    ) -> None:
+        """After expanding a collapsible, scroll to the first DiffDisplay line matching grep_line."""
+        for diff_display in collapsible.query(DiffDisplay):
+            lines = diff_display.diff_text.splitlines()
+            for line_idx, line in enumerate(lines):
+                if grep_line.strip() in line.strip():
+                    diff_display.scroll_to(0, line_idx, animate=False)
+                    diff_display.move_cursor((line_idx, 0))
+                    container.scroll_to_center(diff_display)
+                    return
+        container.scroll_to_center(collapsible)
 
     async def action_go_to(self, section_id: str) -> None:
         await self.go_to(section_id)
@@ -834,9 +859,9 @@ class StarfleetApp(App):
             self.notify("No diffs in this model.", severity="warning")
             return
 
-        async def _on_result(result: tuple[int, str] | None) -> None:
+        async def _on_result(result: DiffSearchResult | None) -> None:
             if result:
-                await self.go_to_diff(result[0], result[1])
+                await self.go_to_diff(result.model_index, result.filename, result.grep_line)
 
         self.push_screen(DiffSearchModal(self.current_model_index, m.file_diffs), _on_result)
 
@@ -845,21 +870,9 @@ class StarfleetApp(App):
             self.notify("No diffs in this proposal.", severity="warning")
             return
 
-        async def _on_result(result: tuple[int, str] | None) -> None:
-            if not result:
-                return
-            _, filename = result
-            mid = model_id(0)
-            await self.go_to(mid)
-            tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-            tabs.active = tab_diffs_id(mid)
-            diffs_pane = tabs.get_pane(tab_diffs_id(mid))
-            container = self.query_one(f"#{mid}", ScrollableContainer)
-            for collapsible in diffs_pane.query(Collapsible):
-                if str(collapsible.title) == filename:
-                    collapsible.collapsed = False
-                    self.call_later(lambda c=collapsible: container.scroll_to_center(c))
-                    break
+        async def _on_result(result: DiffSearchResult | None) -> None:
+            if result:
+                await self.go_to_diff(result.model_index, result.filename, result.grep_line)
 
         self.push_screen(DiffSearchModal(0, self.proposal.file_diffs), _on_result)
 
