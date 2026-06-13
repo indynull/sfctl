@@ -12,10 +12,3 @@ wheels/
 # Coverage
 .coverage
 
-# Legacy local data dir
-justifications/
-0-1-0.5-1-0.5-13-0.5-1-2.json
-diff.json
-project_proposal.json
-prod-hades.json
-revisions.json
