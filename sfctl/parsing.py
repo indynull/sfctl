@@ -628,3 +628,75 @@ def proposal_rubric_changes(prev: list[str], curr: list[str]) -> list[str]:
         if r not in curr_set:
             lines.append(f"[red]-[/] {_sanitize(r)}")
     return lines
+
+
+# Keys from the raw history entry that appear in the "Current" tab.
+_PROPOSAL_SF_FIELDS: list[tuple[str, str]] = [
+    ("repo_description", "Repo Description"),
+    ("domain", "Domain"),
+    ("opus_duration", "Duration"),
+    ("opus_solved", "Solved"),
+    ("familiarity_explanation", "Understanding"),
+    ("difficulty_explanation", "Difficulty"),
+]
+
+
+def _proposal_issues_value(entry: dict) -> str:
+    """Extract the issues text from a history entry."""
+    field = entry.get("opus_issues_partial") or entry.get("opus_issues_no") or {}
+    return _sf_value(field)
+
+
+def _proposal_repo_url(entry: dict) -> str:
+    """Extract the repo URL from a history entry."""
+    cq = entry.get("coding_question", {})
+    sessions = cq.get("sessions", [])
+    return sessions[0].get("githubLink", "") if sessions else ""
+
+
+def has_proposal_changes(prev: dict, curr: dict) -> bool:
+    """Check if any Current-tab field changed between two proposal history entries."""
+    if _extract_rubrics(prev.get("rubrics")) != _extract_rubrics(curr.get("rubrics")):
+        return True
+    for key, _ in _PROPOSAL_SF_FIELDS:
+        if _sf_value(prev.get(key)) != _sf_value(curr.get(key)):
+            return True
+    if _proposal_issues_value(prev) != _proposal_issues_value(curr):
+        return True
+    return _proposal_repo_url(prev) != _proposal_repo_url(curr)
+
+
+def proposal_all_changes(prev: dict, curr: dict) -> list[str]:
+    """Return Rich-markup lines for all changed fields between two proposal entries."""
+    lines: list[str] = []
+    prev_url = _proposal_repo_url(prev)
+    curr_url = _proposal_repo_url(curr)
+    if prev_url != curr_url:
+        if prev_url:
+            lines.append(f"[bold]Repo URL:[/bold] [red]{_sanitize(prev_url)}[/red] → [green]{_sanitize(curr_url)}[/green]")
+        else:
+            lines.append(f"[bold]Repo URL:[/bold] [green]{_sanitize(curr_url)}[/green]")
+    for key, label in _PROPOSAL_SF_FIELDS:
+        old = _sf_value(prev.get(key))
+        new = _sf_value(curr.get(key))
+        if old != new:
+            old_s = _sanitize(old, 80) or "(empty)"
+            new_s = _sanitize(new, 80) or "(empty)"
+            lines.append(f"[bold]{label}:[/bold] [red]{old_s}[/red] → [green]{new_s}[/green]")
+    old_issues = _proposal_issues_value(prev)
+    new_issues = _proposal_issues_value(curr)
+    if old_issues != new_issues:
+        if old_issues and new_issues:
+            lines.append("[bold]Issues:[/bold] changed")
+        elif new_issues:
+            lines.append("[bold]Issues:[/bold] [green]added[/green]")
+        else:
+            lines.append("[bold]Issues:[/bold] [red]removed[/red]")
+    rubric_lines = proposal_rubric_changes(
+        _extract_rubrics(prev.get("rubrics")),
+        _extract_rubrics(curr.get("rubrics")),
+    )
+    if rubric_lines:
+        lines.append("[bold]Rubrics:[/bold]")
+        lines.extend(rubric_lines)
+    return lines

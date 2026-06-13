@@ -40,7 +40,6 @@ from sfctl.ids import (
 )
 from sfctl.models import Annotation, ModelData, ModelScores, ParsedContent, ProposalData
 from sfctl.parsing import (
-    _extract_rubrics,
     _format_duration,
     _sanitize,
     bump_headings,
@@ -52,12 +51,13 @@ from sfctl.parsing import (
     format_timestamp,
     group_events,
     has_meaningful_changes,
+    has_proposal_changes,
     history_justification,
     history_justification_texts,
     history_ranking_changes,
     parse_content,
     parse_proposal,
-    proposal_rubric_changes,
+    proposal_all_changes,
     rank_color,
     strip_diff_preamble,
     trace_type_color,
@@ -549,9 +549,7 @@ class StarfleetApp(App):
             if prev is None:
                 changed = True
             elif is_proposal:
-                changed = _extract_rubrics(entry.get("rubrics")) != _extract_rubrics(
-                    prev.get("rubrics")
-                )
+                changed = has_proposal_changes(prev, entry)
             else:
                 changed = has_meaningful_changes(prev, entry)
 
@@ -582,12 +580,9 @@ class StarfleetApp(App):
             diff_statics: list[Static] = []
             if changed and prev:
                 if is_proposal:
-                    rubric_changes = proposal_rubric_changes(
-                        _extract_rubrics(prev.get("rubrics")),
-                        _extract_rubrics(entry.get("rubrics")),
-                    )
-                    if rubric_changes:
-                        diff_statics.append(Static("\n".join(rubric_changes)))
+                    field_changes = proposal_all_changes(prev, entry)
+                    if field_changes:
+                        diff_statics.append(Static("\n".join(field_changes)))
                 else:
                     rc = history_ranking_changes(prev, entry)
                     jt = history_justification_texts(prev, entry)
@@ -600,7 +595,7 @@ class StarfleetApp(App):
 
             diff_c = None
             if diff_statics:
-                title = "Rubric Changes" if is_proposal else "Changes"
+                title = "Changes"
                 diff_c = Collapsible(title=title, collapsed=False, classes="history-diff")
                 widgets.append(diff_c)
 
