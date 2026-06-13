@@ -43,11 +43,14 @@ def _check_response(resp: httpx.Response, label: str) -> None:
     """Raise AccessError on 401, AuthError on 403, or raise for other HTTP errors."""
     if resp.status_code == 401:
         raise AccessError(
-            f"{label}: HTTP 401. You don't have access to this resource."
+            f"Not authorized ({label.lower()}).\n"
+            f"You're signed in but don't have permission to view this task.\n"
+            f"Check that the task ID is correct and that your account has access."
         )
     if resp.status_code == 403:
         raise AuthError(
-            f"{label}: HTTP 403. Your cookies may be expired or from the wrong profile.\n"
+            f"Not authenticated ({label.lower()}).\n"
+            f"Your session has expired or the cookie profile is wrong.\n"
             f"Run: sfctl --clear-config cookie_file"
         )
     resp.raise_for_status()

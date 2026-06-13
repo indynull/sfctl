@@ -63,7 +63,7 @@ class TestCheckResponse:
         from sfctl.api import AccessError, _check_response
 
         resp = httpx.Response(401, request=httpx.Request("GET", "http://x"))
-        with pytest.raises(AccessError, match="401"):
+        with pytest.raises(AccessError, match="Not authorized"):
             _check_response(resp, "Test")
 
     def test_403_raises_auth_error(self):
