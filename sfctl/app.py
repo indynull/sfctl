@@ -548,7 +548,7 @@ class StarfleetApp(App):
             entry_fb = feedback_for_entry(history, orig_idx)
 
             if prev is None:
-                changed = True
+                changed = not is_proposal
             elif is_proposal:
                 changed = _extract_rubrics(entry.get("rubrics")) != _extract_rubrics(
                     prev.get("rubrics")
