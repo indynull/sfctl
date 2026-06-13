@@ -4,7 +4,7 @@ Screen { background: $surface; }
 .section-title { text-style: bold; color: $accent; margin: 1 0 0 0; }
 .view-header   { dock: top; text-style: bold; color: $text; background: $primary; padding: 0 2; text-align: center; }
 .info-row      { margin: 0 1; }
-.status        { color: $text-muted; text-style: italic; }
+.status        { color: $text-muted; text-style: italic; padding: 0 1; }
 
 /* Collapsibles */
 Collapsible            { margin: 0 0 1 0; border: round $primary 40%; }
@@ -14,10 +14,10 @@ Collapsible.-collapsed { border: round $primary 20%; }
 
 /* Model tabs */
 TabbedContent { height: auto; }
-TabPane { height: auto; padding: 1 0; }
+TabPane { height: auto; padding: 1 1; }
 
 /* Vote bar */
-.vote-bar       { height: 1; width: auto; margin: 0 0 1 0; }
+.vote-bar       { height: 1; width: auto; margin: 0 1 1 1; }
 .vote-btn       { min-width: 3; height: 1; margin: 0; padding: 0; border: none; background: $panel; }
 .vote-btn:hover { background: $primary; }
 .vote-score     { width: 4; height: 1; text-align: center; content-align: center middle; color: $text; }
@@ -46,17 +46,17 @@ DiffDisplay { height: auto; max-height: 50; }
 /* Split handle */
 SplitHandle { color: $primary 40%; }
 SplitHandle:hover { color: $accent; }
-#task-bar   { height: auto; padding: 0 1; color: $accent; background: $panel; }
-#scoreboard { height: auto; padding: 0 1; color: $text; background: $panel; }
-#repo-bar   { height: auto; padding: 0 1; color: $text-muted; }
-#prompt-bar { height: 1fr; margin: 0; border: none; }
-#prompt-bar.-collapsed { border: none; }
+#task-bar    { height: auto; padding: 0 1; color: $accent; background: $panel; }
+#scoreboard  { height: auto; padding: 0 1; color: $text; background: $panel; }
+#repo-bar    { height: auto; padding: 0 1; color: $text-muted; }
+#prompt-label { height: auto; padding: 0 1; margin: 1 0 0 0; text-style: bold; color: $text-muted; }
+#prompt-bar   { height: 1fr; padding: 0 1; margin: 0; }
 
 /* Overview tabs */
 .history-entry          { margin: 0 0 1 0; }
 .history-diff           { margin: 0 0 1 0; border: round $accent 30%; }
 #just-rankings          { height: auto; padding: 0 1; color: $text; background: $panel-darken-1; margin: 0 0 1 0; }
-#justification-editor   { height: auto; min-height: 10; }
+#justification-editor   { height: auto; min-height: 10; margin: 0 1; }
 #justification-preview  { height: auto; padding: 1; }
 
 /* Yank modal */
@@ -74,8 +74,6 @@ DiffSearchModal    { align: center top; background: $background 60%; }
 EventSearchModal    { align: center top; background: $background 60%; }
 #event-search-modal { width: 60%; height: auto; max-height: 40%; border: tall $primary; background: $panel; padding: 1 2; margin: 2 0 0 0; }
 #event-search-list  { height: auto; max-height: 16; margin: 1 0 0 0; }
-
-
 
 /* Help modal */
 HelpModal    { align: center middle; background: $background 60%; }

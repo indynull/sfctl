@@ -195,10 +195,8 @@ class StarfleetApp(App):
             if self.task_type == TaskType.PROJECT_PROPOSAL and self.proposal:
                 prompt = self.proposal.prompt or EM_DASH
             prompt = bump_headings(prompt)
-            with (
-                Collapsible(title="Prompt", collapsed=False, id=ids.PROMPT_BAR),
-                ScrollableContainer(),
-            ):
+            yield Static("[bold]Prompt[/bold]", id="prompt-label")
+            with ScrollableContainer(id=ids.PROMPT_BAR):
                 yield Static(RichMarkdown(prompt))
 
     def compose(self) -> ComposeResult:
