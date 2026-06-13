@@ -112,6 +112,7 @@ class StarfleetApp(App):
         Binding("ctrl+f", "search_diffs", "Find File", show=True),
         Binding("ctrl+g", "search_events", "Find Event", show=True),
 
+        Binding("m", "go_model_proposal", "Model"),
         Binding("c", "copy_summary", "Copy", show=True),
         Binding("e", "toggle_collapse", "Fold", show=True),
         Binding("?", "help", "Help", show=True),
@@ -182,9 +183,7 @@ class StarfleetApp(App):
         """Compose the shared top info bar."""
         repo = self.parsed.repository
         self.task_url = get_web_url(f"/tasks/{self.task_id}")
-        is_proposal = self.task_type == TaskType.PROJECT_PROPOSAL
-        bar_classes = "proposal" if is_proposal else ""
-        with Vertical(id=ids.INFO_BAR, classes=bar_classes):
+        with Vertical(id=ids.INFO_BAR):
             yield Link(f"Task: {self.task_id}", url=self.task_url, id=ids.TASK_BAR)
             yield Static(self.rankings_summary(), id=ids.SCOREBOARD)
             if repo and repo != EM_DASH:
@@ -192,15 +191,15 @@ class StarfleetApp(App):
                     f"[bold]Repo:[/bold] {_sanitize(repo)}",
                     id=ids.REPO_BAR,
                 )
-            if is_proposal:
-                yield TabbedContent(id=ids.PROPOSAL_TOP_TABS)
-            else:
-                prompt = bump_headings(self.parsed.current_prompt or EM_DASH)
-                with (
-                    Collapsible(title="Prompt", collapsed=False, id=ids.PROMPT_BAR),
-                    ScrollableContainer(),
-                ):
-                    yield Static(RichMarkdown(prompt))
+            prompt = self.parsed.current_prompt or EM_DASH
+            if self.task_type == TaskType.PROJECT_PROPOSAL and self.proposal:
+                prompt = self.proposal.prompt or EM_DASH
+            prompt = bump_headings(prompt)
+            with (
+                Collapsible(title="Prompt", collapsed=False, id=ids.PROMPT_BAR),
+                ScrollableContainer(),
+            ):
+                yield Static(RichMarkdown(prompt))
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -227,12 +226,15 @@ class StarfleetApp(App):
             return
 
         if self.task_type == TaskType.PROJECT_PROPOSAL:
+            mid = model_id(0)
             with (
-                Vertical(id=ids.CONTENT_AREA, classes="proposal"),
-                ContentSwitcher(initial=ids.OVERVIEW, id=ids.MAIN_SWITCHER),
-                ScrollableContainer(id=ids.OVERVIEW),
+                Vertical(id=ids.CONTENT_AREA),
+                ContentSwitcher(initial=mid, id=ids.MAIN_SWITCHER),
             ):
-                pass
+                with ScrollableContainer(id=mid):
+                    yield Static("[bold]Model[/bold]", classes="view-header", id=model_header_id(mid))
+                with ScrollableContainer(id=ids.OVERVIEW):
+                    pass
             return
 
         initial = model_id(0) if self.models else ids.OVERVIEW
@@ -435,6 +437,45 @@ class StarfleetApp(App):
         if history:
             await self._populate_history_tabs(tabs, history)
 
+    async def _populate_proposal_model(self) -> None:
+        """Lazily compose the proposal model view (Response, Trace, Diffs)."""
+        if 0 in self._populated_models or not self.proposal:
+            return
+        self._populated_models.add(0)
+        p = self.proposal
+        mid = model_id(0)
+
+        container = self.query_one(f"#{mid}", ScrollableContainer)
+        total_events = sum(1 for e in p.tool_events if isinstance(e, dict))
+
+        tabs = TabbedContent(id=model_tabs_id(mid))
+        await container.mount(tabs)
+
+        if p.trace_summary:
+            response_pane = TabPane("Response", id=tab_response_id(mid))
+            await tabs.add_pane(response_pane)
+            rw: list = []
+            if p.model_id:
+                rw.append(Static(f"[bold]Model:[/bold] {p.model_id}"))
+            rw.append(Static(RichMarkdown(bump_headings(p.trace_summary, 4))))
+            await response_pane.mount_all(rw)
+
+        trace_pane = TabPane(f"Trace ({total_events})", id=tab_trace_id(mid))
+        await tabs.add_pane(trace_pane)
+        await self._mount_trace_content(
+            trace_pane, p.tool_events,
+            model_id=p.model_id, bash_history=p.bash_history,
+            setup_commands=p.setup_commands,
+        )
+
+        if p.file_diffs:
+            diffs_pane = TabPane(f"Diffs ({len(p.file_diffs)})", id=tab_diffs_id(mid))
+            await tabs.add_pane(diffs_pane)
+            await diffs_pane.mount_all([
+                LazyCollapsible.for_diff(fd.filename, fd.diff, "S", classes="inner")
+                for fd in p.file_diffs
+            ])
+
     async def _populate_proposal(self) -> None:
         """Lazily compose the proposal overview panel."""
         if self._overview_populated or not self.proposal:
@@ -442,13 +483,11 @@ class StarfleetApp(App):
         self._overview_populated = True
         p = self.proposal
 
-        await self._populate_proposal_top(p)
-
         container = self.query_one(f"#{ids.OVERVIEW}", ScrollableContainer)
         tabs = TabbedContent(id=ids.TABS_OVERVIEW)
         await container.mount(tabs)
+        tab_idx = 0
 
-        # -- Overview tab (metadata + notes) --
         overview_pane = TabPane("Overview", id=ids.TAB_CURRENT)
         await tabs.add_pane(overview_pane)
         ow: list = []
@@ -483,57 +522,23 @@ class StarfleetApp(App):
             ow.append(Static(f"[bold]Rubrics ({len(p.rubrics)}):[/bold]"))
             rubric_md = "\n".join(f"{i}. {r}" for i, r in enumerate(p.rubrics, 1))
             ow.append(Markdown(rubric_md))
+        await overview_pane.mount_all(ow)
+
+        # -- Issues tab --
         if p.issues:
-            ow.append(Static("[bold]Issues:[/bold]"))
-            ow.append(Markdown(p.issues))
+            issues_pane = TabPane("Issues", id=tab_entry_id(tab_idx))
+            tab_idx += 1
+            await tabs.add_pane(issues_pane)
+            iw: list = [Markdown(p.issues)]
             for comment in p.issue_comments:
                 author = comment.get("createdBy", {}).get("email", "unknown")
                 ts = format_timestamp(comment.get("createdAt", ""))
-                ow.append(
+                iw.append(
                     Static(f"\n[dim]{author} ({ts}):[/dim]\n{comment.get('content', '')}")
                 )
-        await overview_pane.mount_all(ow)
+            await issues_pane.mount_all(iw)
 
         await self._populate_history_tabs(tabs, self._get_history(), tab_offset=20)
-
-    async def _populate_proposal_top(self, p: ProposalData) -> None:
-        """Populate the top info-bar tabs with Prompt, Trace, and Diffs."""
-        top_tabs = self.query_one(f"#{ids.PROPOSAL_TOP_TABS}", TabbedContent)
-        tab_idx = 100
-
-        prompt_pane = TabPane("Prompt", id=tab_entry_id(tab_idx))
-        tab_idx += 1
-        await top_tabs.add_pane(prompt_pane)
-        await prompt_pane.mount(Markdown(p.prompt or "*No prompt.*"))
-
-        if p.trace_summary:
-            response_pane = TabPane("Response", id=tab_entry_id(tab_idx))
-            tab_idx += 1
-            await top_tabs.add_pane(response_pane)
-            rw: list = []
-            if p.model_id:
-                rw.append(Static(f"[bold]Model:[/bold] {p.model_id}"))
-            rw.append(Static(RichMarkdown(bump_headings(p.trace_summary, 4))))
-            await response_pane.mount_all(rw)
-
-        total_events = sum(1 for e in p.tool_events if isinstance(e, dict))
-        trace_pane = TabPane(f"Trace ({total_events})", id=tab_entry_id(tab_idx))
-        tab_idx += 1
-        await top_tabs.add_pane(trace_pane)
-        await self._mount_trace_content(
-            trace_pane, p.tool_events,
-            model_id=p.model_id, bash_history=p.bash_history,
-            setup_commands=p.setup_commands,
-        )
-
-        if p.file_diffs:
-            diffs_pane = TabPane(f"Diffs ({len(p.file_diffs)})", id=tab_entry_id(tab_idx))
-            tab_idx += 1
-            await top_tabs.add_pane(diffs_pane)
-            await diffs_pane.mount_all([
-                LazyCollapsible.for_diff(fd.filename, fd.diff, "S", classes="inner")
-                for fd in p.file_diffs
-            ])
 
     async def _populate_history_tabs(
         self, tabs: TabbedContent, history: list, tab_offset: int = 0
@@ -548,7 +553,7 @@ class StarfleetApp(App):
             entry_fb = feedback_for_entry(history, orig_idx)
 
             if prev is None:
-                changed = not is_proposal
+                changed = True
             elif is_proposal:
                 changed = _extract_rubrics(entry.get("rubrics")) != _extract_rubrics(
                     prev.get("rubrics")
@@ -631,7 +636,7 @@ class StarfleetApp(App):
             self._maybe_show_tutorial()
             return
         if self.task_type == TaskType.PROJECT_PROPOSAL:
-            await self._populate_proposal()
+            await self._populate_proposal_model()
             self.notify(f"Loaded proposal {self.task_id}")
             self._maybe_show_tutorial()
             return
@@ -715,7 +720,8 @@ class StarfleetApp(App):
             return action not in (
                 "vote_up", "vote_down", "go_model",
                 "edit_justification", "copy_summary",
-            )
+            ) and (action != "search_diffs" or self._is_on_model_view())
+
         if action in ("vote_up", "vote_down", "search_diffs"):
             return self._is_on_model_view()
         if action in ("edit_justification", "copy_summary"):
@@ -734,6 +740,9 @@ class StarfleetApp(App):
                 await self._populate_proposal()
             else:
                 await self._populate_overview()
+            return
+        if self.task_type == TaskType.PROJECT_PROPOSAL and section_id == model_id(0):
+            await self._populate_proposal_model()
             return
         for i in range(len(self.models)):
             if model_id(i) == section_id:
@@ -762,6 +771,10 @@ class StarfleetApp(App):
     async def action_go_model(self, index: int) -> None:
         if 0 <= index < len(self.models):
             await self.go_to(model_id(index))
+
+    async def action_go_model_proposal(self) -> None:
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            await self.go_to(model_id(0))
 
     def _active_tabbed_content(self) -> TabbedContent | None:
         """Return the TabbedContent widget in the currently visible view."""
@@ -847,14 +860,16 @@ class StarfleetApp(App):
             if not result:
                 return
             _, filename = result
-            top_tabs = self.query_one(f"#{ids.PROPOSAL_TOP_TABS}", TabbedContent)
-            for pane in top_tabs.query(TabPane):
-                if str(top_tabs.get_tab(pane).label).startswith("Diffs"):
-                    top_tabs.active = str(pane.id)
-                    for collapsible in pane.query(Collapsible):
-                        if str(collapsible.title) == filename:
-                            collapsible.collapsed = False
-                            break
+            mid = model_id(0)
+            await self.go_to(mid)
+            tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
+            tabs.active = tab_diffs_id(mid)
+            diffs_pane = tabs.get_pane(tab_diffs_id(mid))
+            container = self.query_one(f"#{mid}", ScrollableContainer)
+            for collapsible in diffs_pane.query(Collapsible):
+                if str(collapsible.title) == filename:
+                    collapsible.collapsed = False
+                    self.call_later(lambda c=collapsible: container.scroll_to_center(c))
                     break
 
         self.push_screen(DiffSearchModal(0, self.proposal.file_diffs), _on_result)
@@ -879,14 +894,11 @@ class StarfleetApp(App):
 
     async def _expand_trace_event(self, event_index: int, events: list[dict]) -> None:
         if self.task_type == TaskType.PROJECT_PROPOSAL:
-            top_tabs = self.query_one(f"#{ids.PROPOSAL_TOP_TABS}", TabbedContent)
-            for pane in top_tabs.query(TabPane):
-                if str(top_tabs.get_tab(pane).label).startswith("Trace"):
-                    top_tabs.active = str(pane.id)
-                    target_pane = pane
-                    break
-            else:
-                return
+            mid = model_id(0)
+            await self.go_to(mid)
+            tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
+            tabs.active = tab_trace_id(mid)
+            target_pane = tabs.get_pane(tab_trace_id(mid))
         else:
             m = self._current_model()
             if not m:

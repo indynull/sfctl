@@ -40,10 +40,8 @@ DiffDisplay { height: auto; max-height: 50; }
 .trace-t9, .trace-t9 > CollapsibleTitle { color: #af8700; }
 
 /* Info bar + content split */
-#info-bar           { height: 20fr; background: $surface; border-bottom: hkey $primary 40%; overflow-y: auto; }
-#info-bar.proposal  { height: 40fr; }
-#content-area           { height: 80fr; }
-#content-area.proposal  { height: 60fr; }
+#info-bar     { height: 20fr; background: $surface; border-bottom: hkey $primary 40%; overflow-y: auto; }
+#content-area { height: 80fr; }
 
 /* Split handle */
 SplitHandle { color: $primary 40%; }
@@ -53,8 +51,6 @@ SplitHandle:hover { color: $accent; }
 #repo-bar   { height: auto; padding: 0 1; color: $text-muted; }
 #prompt-bar { height: 1fr; margin: 0; border: none; }
 #prompt-bar.-collapsed { border: none; }
-#proposal-top-tabs { height: 1fr; }
-#proposal-top-tabs TabPane { height: 1fr; overflow-y: auto; }
 
 /* Overview tabs */
 .history-entry          { margin: 0 0 1 0; }

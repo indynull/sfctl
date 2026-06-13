@@ -12,3 +12,8 @@ wheels/
 # Coverage
 .coverage
 
+# Legacy local data dir
+justifications/
+
+# Local data files
+/*.json

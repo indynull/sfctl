@@ -31,7 +31,6 @@ YANK_COMMENT = "yank-comment"
 SPLIT_HANDLE = "split-handle"
 CONTENT_AREA = "content-area"
 
-PROPOSAL_TOP_TABS = "proposal-top-tabs"
 
 DIFF_SEARCH_MODAL = "diff-search-modal"
 DIFF_SEARCH_INPUT = "diff-search-input"
