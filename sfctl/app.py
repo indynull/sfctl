@@ -486,9 +486,8 @@ class StarfleetApp(App):
         container = self.query_one(f"#{ids.OVERVIEW}", ScrollableContainer)
         tabs = TabbedContent(id=ids.TABS_OVERVIEW)
         await container.mount(tabs)
-        tab_idx = 0
 
-        overview_pane = TabPane("Overview", id=ids.TAB_CURRENT)
+        overview_pane = TabPane("Current", id=ids.TAB_CURRENT)
         await tabs.add_pane(overview_pane)
         ow: list = []
         if p.repo_url:
@@ -522,21 +521,16 @@ class StarfleetApp(App):
             ow.append(Static(f"[bold]Rubrics ({len(p.rubrics)}):[/bold]"))
             rubric_md = "\n".join(f"{i}. {r}" for i, r in enumerate(p.rubrics, 1))
             ow.append(Markdown(rubric_md))
-        await overview_pane.mount_all(ow)
-
-        # -- Issues tab --
         if p.issues:
-            issues_pane = TabPane("Issues", id=tab_entry_id(tab_idx))
-            tab_idx += 1
-            await tabs.add_pane(issues_pane)
-            iw: list = [Markdown(p.issues)]
+            ow.append(Static("[bold]Issues:[/bold]"))
+            ow.append(Markdown(p.issues))
             for comment in p.issue_comments:
                 author = comment.get("createdBy", {}).get("email", "unknown")
                 ts = format_timestamp(comment.get("createdAt", ""))
-                iw.append(
+                ow.append(
                     Static(f"\n[dim]{author} ({ts}):[/dim]\n{comment.get('content', '')}")
                 )
-            await issues_pane.mount_all(iw)
+        await overview_pane.mount_all(ow)
 
         await self._populate_history_tabs(tabs, self._get_history(), tab_offset=20)
 
