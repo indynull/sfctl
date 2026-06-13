@@ -762,7 +762,9 @@ class StarfleetApp(App):
                         )
                     )
                 else:
-                    self.call_later(lambda c=collapsible: container.scroll_to_center(c))
+                    self.call_later(
+                        lambda c=collapsible: container.scroll_to_widget(c, top=True, animate=False)
+                    )
                 break
 
     def _scroll_to_grep_line(
@@ -775,9 +777,9 @@ class StarfleetApp(App):
                 if grep_line.strip() in line.strip():
                     diff_display.scroll_to(0, line_idx, animate=False)
                     diff_display.move_cursor((line_idx, 0))
-                    container.scroll_to_center(diff_display)
+                    container.scroll_to_widget(diff_display, top=True, animate=False)
                     return
-        container.scroll_to_center(collapsible)
+        container.scroll_to_widget(collapsible, top=True, animate=False)
 
     async def action_go_to(self, section_id: str) -> None:
         await self.go_to(section_id)
