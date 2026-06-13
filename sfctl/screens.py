@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rich.style import Style
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, ScrollableContainer
@@ -13,6 +14,8 @@ from textual.widgets import Input, Label, OptionList, Static, TextArea
 
 from sfctl import ids
 from sfctl.parsing import format_event_line
+
+_MATCH_STYLE = Style(bold=True, color="cyan")
 
 if TYPE_CHECKING:
     from sfctl.models import FileDiff
@@ -113,7 +116,7 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
         query = query_raw.strip()
         option_list = self.query_one(f"#{ids.DIFF_SEARCH_LIST}", OptionList)
         self._result_filenames = []
-        new_options: list[str] = []
+        new_options: list = []
 
         if self._grep:
             if query:
@@ -127,7 +130,7 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
             self._result_filenames = [fd.filename for fd in self.file_diffs]
             new_options = list(self._result_filenames)
         else:
-            matcher = Matcher(query)
+            matcher = Matcher(query, match_style=_MATCH_STYLE)
             scored = [
                 (matcher.match(fd.filename), fd.filename)
                 for fd in self.file_diffs
@@ -136,7 +139,7 @@ class DiffSearchModal(ModalScreen[tuple[int, str] | None]):
             for s, n in scored:
                 if s > 0:
                     self._result_filenames.append(n)
-                    new_options.append(n)
+                    new_options.append(matcher.highlight(n))
 
         option_list.set_options(new_options)
         if option_list.option_count > 0:
@@ -225,7 +228,7 @@ class EventSearchModal(ModalScreen[int | None]):
         query = query_raw.strip()
         option_list = self.query_one(f"#{ids.EVENT_SEARCH_LIST}", OptionList)
         self._indices = []
-        new_options: list[str] = []
+        new_options: list = []
 
         if self._grep:
             if query:
@@ -246,15 +249,16 @@ class EventSearchModal(ModalScreen[int | None]):
             self._indices = list(range(len(self.events)))
             new_options = [self._event_label(self.events[i]) for i in self._indices]
         else:
-            matcher = Matcher(query)
+            matcher = Matcher(query, match_style=_MATCH_STYLE)
             scored: list[tuple[float, int]] = []
             for i, ev in enumerate(self.events):
-                score = matcher.match(self._event_label(ev))
+                label = self._event_label(ev)
+                score = matcher.match(label)
                 if score > 0:
-                    scored.append((score, i))
+                    scored.append((score, i, label))
             scored.sort(key=lambda x: -x[0])
-            self._indices = [i for _, i in scored]
-            new_options = [self._event_label(self.events[i]) for i in self._indices]
+            self._indices = [i for _, i, _ in scored]
+            new_options = [matcher.highlight(label) for _, _, label in scored]
 
         option_list.set_options(new_options)
         if option_list.option_count > 0:
