@@ -650,6 +650,7 @@ class StarfleetApp(App):
             diff_text = lazy.diff
             lazy.diff = None  # consume
             await self._mount_into(c, DiffDisplay(diff_text, lazy.letter, lazy.filename))
+            self._flush_pending_grep()
             return
 
         # Lazy trace event loading
@@ -754,31 +755,30 @@ class StarfleetApp(App):
         container = self.query_one(f"#{mid}", ScrollableContainer)
         for collapsible in diffs_pane.query(Collapsible):
             if str(collapsible.title) == filename:
+                already_open = not collapsible.collapsed
+                self._pending_grep = (collapsible, container, grep_line)
                 collapsible.collapsed = False
-                if grep_line:
-                    self.call_later(
-                        lambda c=collapsible, gl=grep_line: self._scroll_to_grep_line(
-                            c, container, gl
-                        )
-                    )
-                else:
-                    self.call_later(
-                        lambda c=collapsible: container.scroll_to_widget(c, top=True, animate=False)
-                    )
+                if already_open:
+                    self._flush_pending_grep()
                 break
 
-    def _scroll_to_grep_line(
-        self, collapsible: Collapsible, container: ScrollableContainer, grep_line: str,
-    ) -> None:
-        """After expanding a collapsible, scroll to the first DiffDisplay line matching grep_line."""
+    def _flush_pending_grep(self) -> None:
+        """Execute a pending grep scroll when the DiffDisplay is already mounted."""
+        pending = getattr(self, "_pending_grep", None)
+        if not pending:
+            return
+        collapsible, container, grep_line = pending
+        self._pending_grep = None
         for diff_display in collapsible.query(DiffDisplay):
-            lines = diff_display.diff_text.splitlines()
-            for line_idx, line in enumerate(lines):
-                if grep_line.strip() in line.strip():
-                    diff_display.scroll_to(0, line_idx, animate=False)
-                    diff_display.move_cursor((line_idx, 0))
-                    container.scroll_to_widget(diff_display, top=True, animate=False)
-                    return
+            if grep_line:
+                lines = diff_display.diff_text.splitlines()
+                for line_idx, line in enumerate(lines):
+                    if grep_line.strip() in line.strip():
+                        diff_display.scroll_to(0, line_idx, animate=False)
+                        diff_display.move_cursor((line_idx, 0))
+                        break
+            container.scroll_to_widget(diff_display, top=True, animate=False)
+            return
         container.scroll_to_widget(collapsible, top=True, animate=False)
 
     async def action_go_to(self, section_id: str) -> None:
