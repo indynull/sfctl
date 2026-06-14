@@ -908,19 +908,16 @@ class StarfleetApp(App):
     async def _expand_trace_event(self, event_index: int, events: list[dict]) -> None:
         if self.task_type == TaskType.PROJECT_PROPOSAL:
             mid = model_id(0)
-            await self.go_to(mid)
-            tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-            tabs.active = tab_trace_id(mid)
-            target_pane = tabs.get_pane(tab_trace_id(mid))
         else:
             m = self._current_model()
             if not m:
                 return
             mid = model_id(self.current_model_index)
-            await self.go_to(mid)
-            tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-            tabs.active = tab_trace_id(mid)
-            target_pane = tabs.get_pane(tab_trace_id(mid))
+        await self.go_to(mid)
+        tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
+        tabs.active = tab_trace_id(mid)
+        target_pane = tabs.get_pane(tab_trace_id(mid))
+        container = self.query_one(f"#{mid}", ScrollableContainer)
 
         trace_collapsibles = [
             c for c in target_pane.query(Collapsible)
@@ -940,7 +937,9 @@ class StarfleetApp(App):
         if 0 <= event_index < len(trace_collapsibles):
             target = trace_collapsibles[event_index]
             target.collapsed = False
-            self.call_later(lambda t=target: t.scroll_visible())
+            self.call_later(
+                lambda: container.scroll_to_widget(target, top=True, animate=False)
+            )
 
 
 
@@ -949,25 +948,29 @@ class StarfleetApp(App):
         if not isinstance(focused, DiffDisplay):
             self.notify("Focus a diff first (click or tab into it).", severity="warning")
             return
-        selected = focused.selected_text.strip()
-        snippet = selected if selected else focused.diff_text
-        if not snippet.strip():
-            self.notify("No diff content to yank.", severity="warning")
-            return
-        if selected:
+        has_selection = focused.selected_text.strip() != ""
+        if has_selection:
             sel = focused.selection
             start_idx = min(sel.start[0], sel.end[0])
             end_idx = max(sel.start[0], sel.end[0])
+            snippet = focused.original_lines(start_idx, end_idx)
             line_ref = diff_line_ref(focused.diff_text, start_idx, end_idx)
         else:
+            snippet = focused.diff_text
             line_ref = diff_line_ref(focused.diff_text, 0, len(focused.diff_text.splitlines()) - 1)
+        if not snippet.strip():
+            self.notify("No diff content to yank.", severity="warning")
+            return
         filename = focused.filename
 
         def _on_result(result: tuple[int, str] | None) -> None:
             if result:
                 _, block = result
-                if self.summary_text and not self.summary_text.endswith("\n"):
-                    self.summary_text += "\n"
+                if self.summary_text:
+                    if not self.summary_text.endswith("\n"):
+                        self.summary_text += "\n"
+                    if not self.summary_text.endswith("\n\n"):
+                        self.summary_text += "\n"
                 self.summary_text += block
                 self._save_summary(self.summary_text)
                 self._refresh_overview_annotations()

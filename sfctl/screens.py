@@ -13,7 +13,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, Static, TextArea
 
 from sfctl import ids
-from sfctl.parsing import format_event_line
+from sfctl.parsing import format_event_line, language_from_filename
 
 _MATCH_STYLE = Style(bold=True, color="cyan")
 
@@ -179,10 +179,11 @@ class YankCommentModal(ModalScreen[tuple[int, str] | None]):
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         comment = event.value.strip()
-        header = f"**{self.model_name}** `{self.filename}:{self.line_ref}`"
+        lang = language_from_filename(self.filename) or "diff"
+        caption = f"**{self.model_name}** `{self.filename}:{self.line_ref}`"
         if comment:
-            header += f" {comment}"
-        block = f"{header}\n```diff\n{self.snippet}\n```\n"
+            caption += f" — {comment}"
+        block = f"{caption}\n```{lang}\n{self.snippet}\n```\n"
         self.dismiss((self.model_index, block))
 
 
@@ -207,6 +208,8 @@ class DiffSearchModal(ModalScreen[DiffSearchResult | None]):
     BINDINGS = [
         Binding("escape", "dismiss", "Cancel"),
         Binding("ctrl+f", "toggle_mode", "Toggle fuzzy/grep", show=False),
+        Binding("up", "cursor_up", show=False),
+        Binding("down", "cursor_down", show=False),
     ]
 
     def __init__(self, model_index: int, file_diffs: list[FileDiff]):
@@ -223,6 +226,23 @@ class DiffSearchModal(ModalScreen[DiffSearchResult | None]):
             yield OptionList(*[fd.filename for fd in self.file_diffs], id=ids.DIFF_SEARCH_LIST)
 
     def on_mount(self) -> None:
+        self.query_one(f"#{ids.DIFF_SEARCH_INPUT}", Input).focus()
+
+    def _move_highlight(self, delta: int) -> None:
+        ol = self.query_one(f"#{ids.DIFF_SEARCH_LIST}", OptionList)
+        if ol.option_count == 0:
+            return
+        current = ol.highlighted if ol.highlighted is not None else -1
+        ol.highlighted = max(0, min(ol.option_count - 1, current + delta))
+        ol.scroll_to_highlight()
+
+    def action_cursor_up(self) -> None:
+        self._move_highlight(-1)
+
+    def action_cursor_down(self) -> None:
+        self._move_highlight(1)
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         self.query_one(f"#{ids.DIFF_SEARCH_INPUT}", Input).focus()
 
     def action_toggle_mode(self) -> None:
@@ -308,6 +328,8 @@ class EventSearchModal(ModalScreen[int | None]):
     BINDINGS = [
         Binding("escape", "dismiss", "Cancel"),
         Binding("ctrl+g", "toggle_mode", "Toggle fuzzy/grep", show=False),
+        Binding("up", "cursor_up", show=False),
+        Binding("down", "cursor_down", show=False),
     ]
 
     def __init__(self, events: list[dict]):
@@ -342,6 +364,23 @@ class EventSearchModal(ModalScreen[int | None]):
             )
 
     def on_mount(self) -> None:
+        self.query_one(f"#{ids.EVENT_SEARCH_INPUT}", Input).focus()
+
+    def _move_highlight(self, delta: int) -> None:
+        ol = self.query_one(f"#{ids.EVENT_SEARCH_LIST}", OptionList)
+        if ol.option_count == 0:
+            return
+        current = ol.highlighted if ol.highlighted is not None else -1
+        ol.highlighted = max(0, min(ol.option_count - 1, current + delta))
+        ol.scroll_to_highlight()
+
+    def action_cursor_up(self) -> None:
+        self._move_highlight(-1)
+
+    def action_cursor_down(self) -> None:
+        self._move_highlight(1)
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         self.query_one(f"#{ids.EVENT_SEARCH_INPUT}", Input).focus()
 
     def action_toggle_mode(self) -> None:
