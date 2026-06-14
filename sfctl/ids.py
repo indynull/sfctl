@@ -28,6 +28,13 @@ YANK_MODAL = "yank-comment-modal"
 YANK_PREVIEW = "yank-preview"
 YANK_COMMENT = "yank-comment"
 
+REVIEW_COMMENT_MODAL = "review-comment-modal"
+REVIEW_SNIPPET = "review-snippet"
+REVIEW_COMMENT_INPUT = "review-comment-input"
+COMMENTS_MODAL = "comments-modal"
+COMMENTS_PREVIEW = "comments-preview"
+COMMENTS_EDITOR = "comments-editor"
+
 SPLIT_HANDLE = "split-handle"
 CONTENT_AREA = "content-area"
 

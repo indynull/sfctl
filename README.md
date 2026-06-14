@@ -9,6 +9,7 @@ Review model responses, traces, and code diffs. Tabbed per-model views (Response
 - **Syntax-highlighted diffs** -- tree-sitter based highlighting matched to your Textual theme, with background shading for added/removed/hunk lines and real source line numbers
 - **Fuzzy search** -- fzf-style file finder (`ctrl+f`) and event finder (`ctrl+g`) with grep toggle for searching diff content or event payloads
 - **Snippet yanking** -- select lines in a diff and press `y` to yank into your summary with language-specific code fences and source references
+- **Reviewer comments** -- press `n` from anywhere to add a note (with optional snippet), accumulated in a Comments tab with raw/rendered toggle and clipboard copy
 - **Per-context voting** -- `+`/`-` scores track separately for response quality, code quality, and overall ranking
 - **Revision history** -- Overview tab shows diffs between revisions, inline feedback, and justification changes
 
@@ -69,10 +70,13 @@ This is useful for offline development or testing UI changes without auth.
 | `e` | Expand/collapse all in current tab |
 | `+` `-` | Vote (context-aware: code on diffs, response on response tab, overall elsewhere) |
 | `y` | Yank selected diff snippet into summary |
+| `n` | Add a reviewer comment (note) |
 | `ctrl+e` | Edit summary |
+| `ctrl+n` | Edit comments (raw markdown) |
 | `ctrl+f` | Fuzzy file search / grep diff content (toggle with `ctrl+f`) |
 | `ctrl+g` | Fuzzy event search / grep event content (toggle with `ctrl+g`) |
 | `c` | Copy review to clipboard |
+| `C` | Copy comments to clipboard |
 | `r` | Refresh data from API |
 | `ctrl+r` | Reset local annotations to server state |
 | `?` | Help |

@@ -77,10 +77,10 @@ def _latest_server_justification(history: list | None) -> str:
 
 def load_annotations(
     task_id: str, num_models: int, history: list | None = None
-) -> tuple[list[list[Annotation]], str]:
-    """Load annotations and summary for a task.
+) -> tuple[list[list[Annotation]], str, str]:
+    """Load annotations, summary, and review comments for a task.
 
-    Returns (per-model annotation lists, summary text).
+    Returns (per-model annotation lists, summary text, review comments).
     Falls back to legacy scores/justification if no annotations file exists.
 
     The summary always reflects the latest server justification when it has
@@ -93,13 +93,14 @@ def load_annotations(
         data = json.loads(path.read_text())
         local_summary = data.get("summary", "")
         prev_server = data.get("_server_justification", "")
+        review_comments = data.get("review_comments", "")
         annotations: list[list[Annotation]] = []
         for i in range(num_models):
             raw = data.get(str(i), [])
             annotations.append([Annotation.from_dict(d) for d in raw])
         if server_just and (server_just != prev_server or not local_summary.strip()):
-            return annotations, server_just
-        return annotations, local_summary
+            return annotations, server_just, review_comments
+        return annotations, local_summary, review_comments
 
     # Check legacy files
     sp = scores_path(task_id)
@@ -108,10 +109,10 @@ def load_annotations(
         annotations, summary = _migrate_legacy(task_id, num_models)
         if not summary.strip() and server_just.strip():
             summary = server_just
-        return annotations, summary
+        return annotations, summary, ""
 
     # No local data at all -- use server justification
-    return [[] for _ in range(num_models)], server_just
+    return [[] for _ in range(num_models)], server_just, ""
 
 
 def save_annotations(
@@ -119,11 +120,13 @@ def save_annotations(
     annotations: list[list[Annotation]],
     summary: str,
     server_justification: str = "",
+    review_comments: str = "",
 ) -> None:
-    """Persist annotations and summary to disk."""
+    """Persist annotations, summary, and review comments to disk."""
     data: dict = {}
     for i, model_anns in enumerate(annotations):
         data[str(i)] = [a.to_dict() for a in model_anns]
     data["summary"] = summary
     data["_server_justification"] = server_justification
+    data["review_comments"] = review_comments
     annotations_path(task_id).write_text(json.dumps(data, indent=2))

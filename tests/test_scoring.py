@@ -33,9 +33,10 @@ class TestAnnotationPersistence:
             [Annotation(context="response", sentiment=-1)],
             [],
         ]
-        save_annotations(TASK_ID, anns, "my summary")
-        loaded_anns, summary = load_annotations(TASK_ID, 3)
+        save_annotations(TASK_ID, anns, "my summary", review_comments="note 1")
+        loaded_anns, summary, comments = load_annotations(TASK_ID, 3)
         assert summary == "my summary"
+        assert comments == "note 1"
         assert len(loaded_anns[0]) == 1
         assert loaded_anns[0][0].filename == "a.py"
         assert loaded_anns[0][0].sentiment == 1
@@ -46,7 +47,7 @@ class TestAnnotationPersistence:
     def test_load_annotations_no_file(self):
         from sfctl.scoring import load_annotations
 
-        anns, summary = load_annotations("t-nonexistent-ann", 2)
+        anns, summary, _comments = load_annotations("t-nonexistent-ann", 2)
         assert len(anns) == 2
         assert all(len(a) == 0 for a in anns)
         assert summary == ""
@@ -58,7 +59,7 @@ class TestAnnotationPersistence:
             {"justification": {"_sf_rich": True, "value": "L0 justification"}, "reviewLevel": 0},
             {"justification": {"_sf_rich": True, "value": "L1 revised justification"}, "reviewLevel": 1},
         ]
-        _anns, summary = load_annotations("t-nonexistent-history-seed", 3, history)
+        _anns, summary, _comments = load_annotations("t-nonexistent-history-seed", 3, history)
         assert summary == "L1 revised justification"
 
     def test_load_annotations_updates_on_new_revision(self):
@@ -72,7 +73,7 @@ class TestAnnotationPersistence:
             {"justification": {"_sf_rich": True, "value": "L0 justification"}, "reviewLevel": 0},
             {"justification": {"_sf_rich": True, "value": "L1 revised justification"}, "reviewLevel": 1},
         ]
-        loaded_anns, summary = load_annotations("t-revision-test", 3, l1_history)
+        loaded_anns, summary, _comments = load_annotations("t-revision-test", 3, l1_history)
         assert summary == "L1 revised justification"
         assert len(loaded_anns[0]) == 1
         assert loaded_anns[0][0].sentiment == 1
@@ -87,7 +88,7 @@ class TestAnnotationPersistence:
         anns = [[Annotation(context="code", sentiment=1)], [], []]
         save_annotations("t-keep-local", anns, "my custom edits", "server just")
 
-        _loaded_anns, summary = load_annotations("t-keep-local", 3, history)
+        _loaded_anns, summary, _comments = load_annotations("t-keep-local", 3, history)
         assert summary == "my custom edits"
 
     def test_scores_from_annotations(self):

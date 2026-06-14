@@ -55,6 +55,7 @@ from sfctl.parsing import (
     history_justification,
     history_justification_texts,
     history_ranking_changes,
+    language_from_filename,
     parse_content,
     parse_proposal,
     proposal_all_changes,
@@ -72,10 +73,12 @@ from sfctl.scoring import (
     scores_path,
 )
 from sfctl.screens import (
+    CommentsModal,
     DiffSearchModal,
     DiffSearchResult,
     EventSearchModal,
     HelpModal,
+    ReviewCommentModal,
     YankCommentModal,
     build_clipboard_text,
 )
@@ -114,7 +117,10 @@ class StarfleetApp(App):
         Binding("ctrl+g", "search_events", "Find Event", show=True),
         Binding("e", "toggle_collapse", "Fold", show=True),
         Binding("c", "copy_summary", "Copy", show=True),
+        Binding("C", "copy_comments", "Copy Notes", show=True),
         Binding("y", "yank_file", "Yank", show=True),
+        Binding("n", "add_comment", "Note", show=True),
+        Binding("ctrl+n", "edit_comments", "Edit Notes", show=True),
         Binding("r", "refresh_data", "Refresh", show=True),
         Binding("ctrl+r", "reset_local", "Reset", show=True),
         Binding("?", "help", "Help", show=True),
@@ -148,7 +154,8 @@ class StarfleetApp(App):
 
         self.annotations: list[list[Annotation]]
         self.summary_text: str
-        self.annotations, self.summary_text = load_annotations(
+        self.review_comments: str
+        self.annotations, self.summary_text, self.review_comments = load_annotations(
             self.task_id, len(self.models), self._get_history()
         )
         self._server_justification = _latest_server_justification(self._get_history())
@@ -671,7 +678,7 @@ class StarfleetApp(App):
                     await self._mount_into(inner_c, *detail)
 
     def _save_summary_from_editor(self) -> None:
-        """Save summary text from the inline editor if it exists."""
+        """Save summary from the inline editor if it exists."""
         try:
             editor = self.query_one(f"#{ids.JUST_EDITOR}", TextArea)
             self._save_summary(editor.text)
@@ -1037,7 +1044,7 @@ class StarfleetApp(App):
         ):
             if path.exists():
                 path.unlink()
-        self.annotations, self.summary_text = load_annotations(
+        self.annotations, self.summary_text, self.review_comments = load_annotations(
             self.task_id, len(self.models), self._get_history()
         )
         self._server_justification = _latest_server_justification(self._get_history())
@@ -1101,7 +1108,19 @@ class StarfleetApp(App):
     def _save_summary(self, text: str) -> None:
         """Update the summary text and persist."""
         self.summary_text = text
-        save_annotations(self.task_id, self.annotations, self.summary_text, self._server_justification)
+        self._persist()
+
+    def _save_comments(self, text: str) -> None:
+        """Update review comments and persist."""
+        self.review_comments = text
+        self._persist()
+
+    def _persist(self) -> None:
+        """Persist all annotations, summary, and comments to disk."""
+        save_annotations(
+            self.task_id, self.annotations, self.summary_text,
+            self._server_justification, self.review_comments,
+        )
 
     def _refresh_overview_annotations(self) -> None:
         """Refresh the overview summary and rankings."""
@@ -1148,6 +1167,46 @@ class StarfleetApp(App):
             preview.update(self.summary_text or self._EMPTY_SUMMARY)
             preview.display = True
 
+    def action_add_comment(self) -> None:
+        snippet = ""
+        context = ""
+        lang = ""
+        focused = self.focused
+        if isinstance(focused, DiffDisplay):
+            sel_text = focused.selected_text.strip()
+            if sel_text:
+                snippet = sel_text
+            context = f"{focused.model_name} {focused.filename}"
+            lang = language_from_filename(focused.filename) or "diff"
+        elif isinstance(focused, TextArea) and focused.selected_text.strip():
+            snippet = focused.selected_text.strip()
+
+        def _on_result(result: str | None) -> None:
+            if result:
+                if self.review_comments:
+                    if not self.review_comments.endswith("\n"):
+                        self.review_comments += "\n"
+                    if not self.review_comments.endswith("\n\n"):
+                        self.review_comments += "\n"
+                self.review_comments += result
+                self._save_comments(self.review_comments)
+                self.notify("Comment added.")
+
+        self.push_screen(ReviewCommentModal(snippet, context, lang), _on_result)
+
+    def action_edit_comments(self) -> None:
+        def _on_result(text: str) -> None:
+            self._save_comments(text)
+
+        self.push_screen(CommentsModal(self.review_comments), _on_result)
+
+    def action_copy_comments(self) -> None:
+        if not self.review_comments.strip():
+            self.notify("No comments to copy.", severity="warning")
+            return
+        self.copy_to_clipboard(self.review_comments)
+        self.notify("Comments copied to clipboard.")
+
     def on_key(self, event) -> None:
         """Handle escape from justification editor to switch back to preview."""
         if (
@@ -1168,13 +1227,16 @@ class StarfleetApp(App):
         "  e          expand/collapse all in current tab\n\n"
         "[bold]Review[/bold]\n"
         "  +/-        vote (diff=code, response=response, else=overall)\n"
-        "  y          yank diff snippet into justification\n\n"
+        "  y          yank diff snippet into justification\n"
+        "  n          add a reviewer comment (note)\n\n"
         "[bold]Search[/bold]\n"
         "  ctrl+f     search files (repeat to toggle fuzzy/grep)\n"
         "  ctrl+g     search events (repeat to toggle fuzzy/grep)\n\n"
         "[bold]Actions[/bold]\n"
         "  ctrl+e     edit summary\n"
+        "  ctrl+n     edit comments\n"
         "  c          copy review to clipboard\n"
+        "  C          copy comments to clipboard\n"
         "  r          refresh data from API\n"
         "  ctrl+r     reset local annotations and scores\n"
         "  q          quit"
@@ -1233,7 +1295,7 @@ class StarfleetApp(App):
         self.task_id = (
             new_data.get("task", {}).get("taskId") or self.parsed.task_id or self.task_id
         )
-        self.annotations, self.summary_text = load_annotations(
+        self.annotations, self.summary_text, self.review_comments = load_annotations(
             self.task_id, len(self.models), self._get_history()
         )
         self._server_justification = _latest_server_justification(self._get_history())

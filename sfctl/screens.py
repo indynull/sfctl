@@ -187,6 +187,119 @@ class YankCommentModal(ModalScreen[tuple[int, str] | None]):
         self.dismiss((self.model_index, block))
 
 
+class ReviewCommentModal(ModalScreen[str | None]):
+    """Modal to add a reviewer comment with an optional snippet.
+
+    Dismisses with a formatted markdown block on submit, None on cancel.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Cancel"),
+    ]
+
+    def __init__(self, snippet: str = "", context: str = "", lang: str = ""):
+        super().__init__()
+        self.snippet = snippet
+        self.context = context
+        self.lang = lang
+
+    def compose(self) -> ComposeResult:
+        label = self.context or "Add comment"
+        with Container(id=ids.REVIEW_COMMENT_MODAL):
+            yield Label(
+                f"{label}  (enter to add, esc to cancel)",
+                classes="section-title",
+            )
+            if self.snippet:
+                yield TextArea(
+                    self.snippet,
+                    read_only=True,
+                    show_line_numbers=False,
+                    id=ids.REVIEW_SNIPPET,
+                )
+            yield Input(placeholder="comment", id=ids.REVIEW_COMMENT_INPUT)
+
+    def on_mount(self) -> None:
+        self.query_one(f"#{ids.REVIEW_COMMENT_INPUT}", Input).focus()
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        comment = event.value.strip()
+        if not comment and not self.snippet:
+            return
+        parts: list[str] = []
+        if self.context:
+            parts.append(f"**{self.context}**")
+        if self.snippet:
+            if self.lang:
+                parts.append(f"```{self.lang}\n{self.snippet}\n```")
+            else:
+                quoted = "\n".join(f"> {line}" for line in self.snippet.splitlines())
+                parts.append(quoted)
+        if comment:
+            parts.append(comment)
+        block = "\n\n".join(parts) + "\n\n---\n"
+        self.dismiss(block)
+
+
+class CommentsModal(ModalScreen[str]):
+    """Modal for viewing/editing reviewer comments.
+
+    Toggles between rendered markdown and raw editor.
+    Always dismisses with the current text.
+    """
+
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+        Binding("ctrl+n", "toggle_edit", "Toggle Edit", show=True),
+    ]
+
+    def __init__(self, text: str):
+        super().__init__()
+        self._text = text
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import Markdown
+
+        with Container(id=ids.COMMENTS_MODAL):
+            yield Label(
+                "Comments  [dim]ctrl+n to edit, esc to close[/dim]",
+                classes="section-title",
+            )
+            yield Markdown(
+                self._text or "*No comments yet -- press n to add one.*",
+                id=ids.COMMENTS_PREVIEW,
+            )
+            yield TextArea(
+                self._text, language="markdown",
+                show_line_numbers=True, id=ids.COMMENTS_EDITOR,
+            )
+
+    def on_mount(self) -> None:
+        self.query_one(f"#{ids.COMMENTS_EDITOR}").display = False
+
+    def action_toggle_edit(self) -> None:
+        from textual.widgets import Markdown
+
+        editor = self.query_one(f"#{ids.COMMENTS_EDITOR}", TextArea)
+        preview = self.query_one(f"#{ids.COMMENTS_PREVIEW}", Markdown)
+        if editor.display:
+            self._text = editor.text
+            editor.display = False
+            preview.update(self._text or "*No comments yet -- press n to add one.*")
+            preview.display = True
+        else:
+            editor.text = self._text
+            preview.display = False
+            editor.display = True
+            editor.focus()
+
+    def action_close(self) -> None:
+        editor = self.query_one(f"#{ids.COMMENTS_EDITOR}", TextArea)
+        if editor.display:
+            self._text = editor.text
+        self.dismiss(self._text)
+
+
 class DiffSearchResult:
     """Result from the diff search modal."""
 

@@ -75,6 +75,18 @@ EventSearchModal    { align: center top; background: $background 60%; }
 #event-search-modal { width: 60%; height: auto; max-height: 40%; border: tall $primary; background: $panel; padding: 1 2; margin: 2 0 0 0; }
 #event-search-list  { height: auto; max-height: 16; margin: 1 0 0 0; }
 
+/* Review comment modal */
+ReviewCommentModal    { align: center middle; background: $background 60%; }
+#review-comment-modal { width: 80%; height: auto; max-height: 60%; border: tall $primary; background: $panel; padding: 1 2; }
+#review-snippet       { height: auto; max-height: 12; margin: 0 0 1 0; }
+#review-comment-input { dock: bottom; margin: 1 0 0 0; }
+
+/* Comments viewer/editor modal */
+CommentsModal    { align: center middle; background: $background 60%; }
+#comments-modal  { width: 80%; height: auto; max-height: 70%; border: tall $primary; background: $panel; padding: 1 2; }
+#comments-preview { height: auto; max-height: 50; padding: 1; }
+#comments-editor  { height: auto; min-height: 10; max-height: 50; margin: 0; }
+
 /* Help modal */
 HelpModal    { align: center middle; background: $background 60%; }
 #help-modal  { width: 70%; height: auto; max-height: 70%; border: tall $primary; background: $panel; padding: 1 2; }
