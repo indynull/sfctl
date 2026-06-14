@@ -16,12 +16,8 @@ from textual.widget import Widget
 from textual.widgets import Collapsible, Static, TextArea
 
 from sfctl.constants import ARROW_DOWN, ARROW_RIGHT, ARROW_UP
-from sfctl.parsing import (
-    _sanitize,
-    build_diff_line_map,
-    language_from_filename,
-    parse_diff_lines,
-)
+from sfctl.diff import build_diff_line_map, language_from_filename, parse_diff_lines
+from sfctl.formatting import sanitize
 
 
 class SplitHandle(Widget):
@@ -308,7 +304,7 @@ class LazyCollapsible(Collapsible):
         )
 
 
-def _format_value(v: object, max_len: int = 120) -> str:
+def format_value(v: object, max_len: int = 120) -> str:
     """Format a single value for display, truncating long strings."""
     if v is None:
         return "[dim italic]null[/]"
@@ -317,26 +313,26 @@ def _format_value(v: object, max_len: int = 120) -> str:
     if isinstance(v, (int, float)):
         return f"[dim]{v}[/]"
     if isinstance(v, str):
-        s = _sanitize(v, max_len)
+        s = sanitize(v, max_len)
         return f"[dim]{s}[/]" if s else '[dim italic]""[/]'
     if isinstance(v, list):
         if not v:
             return "[dim italic](empty list)[/]"
-        items = ", ".join(_sanitize(str(x), 40) for x in v[:5])
+        items = ", ".join(sanitize(str(x), 40) for x in v[:5])
         suffix = f" ... +{len(v) - 5}" if len(v) > 5 else ""
         return f"[dim]({items}{suffix})[/]"
     if isinstance(v, dict):
         if not v:
             return "[dim italic]{...}[/]"
         items = ", ".join(
-            f"{_sanitize(str(k), 20)}={_sanitize(str(val), 30)}" for k, val in list(v.items())[:4]
+            f"{sanitize(str(k), 20)}={sanitize(str(val), 30)}" for k, val in list(v.items())[:4]
         )
         suffix = f" ... +{len(v) - 4}" if len(v) > 4 else ""
         return f"[dim]{items}{suffix}[/]"
-    return f"[dim]{_sanitize(str(v), max_len)}[/]"
+    return f"[dim]{sanitize(str(v), max_len)}[/]"
 
 
-def _try_parse(v: object) -> object:
+def try_parse(v: object) -> object:
     """If v is a JSON string, parse it into a dict/list."""
     if isinstance(v, str):
         try:
@@ -348,47 +344,47 @@ def _try_parse(v: object) -> object:
     return v
 
 
-def trace_event_detail_widgets(ev: dict) -> list[Static]:
+def trace_event_detail_widgets(ev: object) -> list[Static]:
     """Build detail widgets for a trace event's args and response/output."""
     widgets: list[Static] = []
 
-    # Arguments
-    args = None
-    for key in ("args", "arguments", "input"):
-        args = ev.get(key)
-        if args is not None:
-            break
-    if args is not None:
-        args = _try_parse(args)
+    if hasattr(ev, "input"):
+        raw_input = ev.input
+    elif isinstance(ev, dict):
+        raw_input = ev.get("input", ev.get("args", ev.get("arguments", "")))
+    else:
+        raw_input = ""
+    if raw_input:
+        args = try_parse(raw_input)
         if isinstance(args, dict) and args:
             widgets.append(Static("  [bold]args:[/]"))
             for k, v in args.items():
-                key_str = _sanitize(str(k), 30)
-                widgets.append(Static(f"    [bold cyan]{key_str}[/] = {_format_value(v)}"))
+                key_str = sanitize(str(k), 30)
+                widgets.append(Static(f"    [bold cyan]{key_str}[/] = {format_value(v)}"))
         elif isinstance(args, list) and args:
-            widgets.append(Static(f"  [bold]args:[/] {_format_value(args)}"))
+            widgets.append(Static(f"  [bold]args:[/] {format_value(args)}"))
         else:
-            line = _sanitize(str(args))
+            line = sanitize(str(args))
             if line:
                 widgets.append(Static(f"  [bold]args:[/] [dim]{line}[/]"))
 
-    # Response / output
-    response = None
-    for key in ("output", "result", "response"):
-        response = ev.get(key)
-        if response is not None:
-            break
-    if response is not None:
-        response = _try_parse(response)
+    if hasattr(ev, "output"):
+        raw_output = ev.output
+    elif isinstance(ev, dict):
+        raw_output = ev.get("output", ev.get("result", ev.get("response", "")))
+    else:
+        raw_output = ""
+    if raw_output:
+        response = try_parse(raw_output)
         if isinstance(response, dict) and response:
             widgets.append(Static(f"  [bold]{ARROW_RIGHT} output:[/]"))
             for k, v in response.items():
-                key_str = _sanitize(str(k), 30)
-                widgets.append(Static(f"    [bold green]{key_str}[/] = {_format_value(v)}"))
+                key_str = sanitize(str(k), 30)
+                widgets.append(Static(f"    [bold green]{key_str}[/] = {format_value(v)}"))
         elif isinstance(response, list) and response:
-            widgets.append(Static(f"  [bold]{ARROW_RIGHT}[/] {_format_value(response)}"))
+            widgets.append(Static(f"  [bold]{ARROW_RIGHT}[/] {format_value(response)}"))
         else:
-            line = _sanitize(str(response), 300)
+            line = sanitize(str(response), 300)
             if line:
                 widgets.append(Static(f"  [bold]{ARROW_RIGHT}[/] [dim]{line}[/]"))
 

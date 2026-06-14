@@ -10,20 +10,20 @@ from sfctl.config import data_dir
 from sfctl.models import Annotation, ModelScores
 
 
-def _safe_task_id(task_id: str) -> str:
+def safe_task_id(task_id: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", task_id)
 
 
 def scores_path(task_id: str) -> Path:
-    return data_dir() / f"{_safe_task_id(task_id)}_scores.json"
+    return data_dir() / f"{safe_task_id(task_id)}_scores.json"
 
 
 def justification_path(task_id: str) -> Path:
-    return data_dir() / f"{_safe_task_id(task_id)}.md"
+    return data_dir() / f"{safe_task_id(task_id)}.md"
 
 
 def annotations_path(task_id: str) -> Path:
-    return data_dir() / f"{_safe_task_id(task_id)}_annotations.json"
+    return data_dir() / f"{safe_task_id(task_id)}_annotations.json"
 
 
 def scores_from_annotations(annotations: list[list[Annotation]]) -> list[ModelScores]:
@@ -42,7 +42,6 @@ def _migrate_legacy(task_id: str, num_models: int) -> tuple[list[list[Annotation
     """Read old _scores.json + .md and convert to annotations + summary."""
     annotations: list[list[Annotation]] = [[] for _ in range(num_models)]
 
-    # Migrate scores -> bare-sentiment annotations
     sp = scores_path(task_id)
     if sp.exists():
         saved = json.loads(sp.read_text())
@@ -56,7 +55,6 @@ def _migrate_legacy(task_id: str, num_models: int) -> tuple[list[list[Annotation
                     for _ in range(abs(val)):
                         annotations[idx].append(Annotation(context=ctx, sentiment=sentiment))
 
-    # Migrate justification -> summary
     summary = ""
     jp = justification_path(task_id)
     if jp.exists():
@@ -64,7 +62,7 @@ def _migrate_legacy(task_id: str, num_models: int) -> tuple[list[list[Annotation
     return annotations, summary
 
 
-def _latest_server_justification(history: list | None) -> str:
+def latest_server_justification(history: list | None) -> str:
     """Extract the justification from the latest history entry."""
     if not history:
         return ""
@@ -86,7 +84,7 @@ def load_annotations(
     The summary always reflects the latest server justification when it has
     changed since the local copy was saved, so new revisions are picked up.
     """
-    server_just = _latest_server_justification(history)
+    server_just = latest_server_justification(history)
 
     path = annotations_path(task_id)
     if path.exists():
@@ -102,7 +100,6 @@ def load_annotations(
             return annotations, server_just, review_comments
         return annotations, local_summary, review_comments
 
-    # Check legacy files
     sp = scores_path(task_id)
     jp = justification_path(task_id)
     if sp.exists() or jp.exists():
@@ -111,7 +108,6 @@ def load_annotations(
             summary = server_just
         return annotations, summary, ""
 
-    # No local data at all -- use server justification
     return [[] for _ in range(num_models)], server_just, ""
 
 
@@ -130,3 +126,78 @@ def save_annotations(
     data["_server_justification"] = server_justification
     data["review_comments"] = review_comments
     annotations_path(task_id).write_text(json.dumps(data, indent=2))
+
+
+class ReviewState:
+    """Encapsulates all persistent review state for a task.
+
+    Owns annotations, summary, review comments, server justification, and
+    computed scores. Provides load, save, and mutation methods.
+    """
+
+    def __init__(
+        self,
+        task_id: str,
+        num_models: int,
+        history: list | None = None,
+    ) -> None:
+        self.task_id = task_id
+        self.annotations: list[list[Annotation]]
+        self.summary: str
+        self.comments: str
+        self.annotations, self.summary, self.comments = load_annotations(
+            task_id, num_models, history,
+        )
+        self.server_justification = latest_server_justification(history)
+        self.scores: list[ModelScores] = scores_from_annotations(self.annotations)
+
+    def add_annotation(self, model_index: int, annotation: Annotation) -> None:
+        """Append an annotation for a model, recompute scores, and persist."""
+        if 0 <= model_index < len(self.annotations):
+            self.annotations[model_index].append(annotation)
+        self.scores = scores_from_annotations(self.annotations)
+        self.persist()
+
+    def set_summary(self, text: str) -> None:
+        """Update the summary and persist."""
+        self.summary = text
+        self.persist()
+
+    def set_comments(self, text: str) -> None:
+        """Update review comments and persist."""
+        self.comments = text
+        self.persist()
+
+    def persist(self) -> None:
+        """Write current state to disk."""
+        save_annotations(
+            self.task_id,
+            self.annotations,
+            self.summary,
+            self.server_justification,
+            self.comments,
+        )
+
+    def reset(self, num_models: int, history: list | None = None) -> None:
+        """Reset to server state, clearing local data files."""
+        for path in (
+            annotations_path(self.task_id),
+            scores_path(self.task_id),
+            justification_path(self.task_id),
+        ):
+            if path.exists():
+                path.unlink()
+        self.annotations, self.summary, self.comments = load_annotations(
+            self.task_id, num_models, history,
+        )
+        self.server_justification = latest_server_justification(history)
+        self.scores = scores_from_annotations(self.annotations)
+
+    def reload(self, task_id: str, num_models: int, history: list | None = None) -> None:
+        """Reload state for a (possibly new) task ID."""
+        self.task_id = task_id
+        self.annotations, self.summary, self.comments = load_annotations(
+            task_id, num_models, history,
+        )
+        self.server_justification = latest_server_justification(history)
+        self.scores = scores_from_annotations(self.annotations)

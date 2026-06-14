@@ -7,24 +7,24 @@ import pytest
 
 class TestSanitize:
     def test_strips_brackets_and_newlines(self):
-        from sfctl.widgets import _sanitize
+        from sfctl.widgets import sanitize
 
-        assert _sanitize("foo[bar]\nbaz") == "foo(bar) baz"
+        assert sanitize("foo[bar]\nbaz") == "foo(bar) baz"
 
     def test_truncates(self):
-        from sfctl.widgets import _sanitize
+        from sfctl.widgets import sanitize
 
-        assert len(_sanitize("x" * 300, 100)) <= 100
+        assert len(sanitize("x" * 300, 100)) <= 100
 
     def test_empty(self):
-        from sfctl.widgets import _sanitize
+        from sfctl.widgets import sanitize
 
-        assert _sanitize("") == ""
+        assert sanitize("") == ""
 
 
 class TestParseDiffLines:
     def test_parses_kinds(self):
-        from sfctl.parsing import parse_diff_lines
+        from sfctl.diff import parse_diff_lines
 
         diff = "@@ -1,3 +1,3 @@\n-old line\n+new line\n context"
         lines = parse_diff_lines(diff)
@@ -35,7 +35,7 @@ class TestParseDiffLines:
         assert lines[3].kind == "ctx"
 
     def test_strips_prefix(self):
-        from sfctl.parsing import parse_diff_lines
+        from sfctl.diff import parse_diff_lines
 
         diff = "@@ -1,2 +1,2 @@\n-old\n+new\n ctx"
         lines = parse_diff_lines(diff)
@@ -44,7 +44,7 @@ class TestParseDiffLines:
         assert lines[3].text == "ctx"
 
     def test_empty_text(self):
-        from sfctl.parsing import parse_diff_lines
+        from sfctl.diff import parse_diff_lines
 
         lines = parse_diff_lines("")
         assert isinstance(lines, list)
@@ -53,96 +53,96 @@ class TestParseDiffLines:
 
 class TestFormatValue:
     def test_none(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "null" in _format_value(None)
+        assert "null" in format_value(None)
 
     def test_bool(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "True" in _format_value(True)
+        assert "True" in format_value(True)
 
     def test_int(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "42" in _format_value(42)
+        assert "42" in format_value(42)
 
     def test_float(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "3.14" in _format_value(3.14)
+        assert "3.14" in format_value(3.14)
 
     def test_string(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "hello" in _format_value("hello")
+        assert "hello" in format_value("hello")
 
     def test_empty_string(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert '""' in _format_value("")
+        assert '""' in format_value("")
 
     def test_list_empty(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "empty list" in _format_value([])
+        assert "empty list" in format_value([])
 
     def test_list_short(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "1" in _format_value([1, 2, 3])
+        assert "1" in format_value([1, 2, 3])
 
     def test_list_long(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "+5" in _format_value(list(range(10)))
+        assert "+5" in format_value(list(range(10)))
 
     def test_dict_empty(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "{...}" in _format_value({})
+        assert "{...}" in format_value({})
 
     def test_dict_short(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "a" in _format_value({"a": 1})
+        assert "a" in format_value({"a": 1})
 
     def test_dict_long(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "+6" in _format_value({str(i): i for i in range(10)})
+        assert "+6" in format_value({str(i): i for i in range(10)})
 
     def test_other_type(self):
-        from sfctl.widgets import _format_value
+        from sfctl.widgets import format_value
 
-        assert "object" in _format_value(object())
+        assert "object" in format_value(object())
 
 
 class TestTryParse:
     def test_json_dict(self):
-        from sfctl.widgets import _try_parse
+        from sfctl.widgets import try_parse
 
-        assert _try_parse('{"a":1}') == {"a": 1}
+        assert try_parse('{"a":1}') == {"a": 1}
 
     def test_json_list(self):
-        from sfctl.widgets import _try_parse
+        from sfctl.widgets import try_parse
 
-        assert _try_parse("[1,2]") == [1, 2]
+        assert try_parse("[1,2]") == [1, 2]
 
     def test_non_json(self):
-        from sfctl.widgets import _try_parse
+        from sfctl.widgets import try_parse
 
-        assert _try_parse("not json") == "not json"
+        assert try_parse("not json") == "not json"
 
     def test_json_scalar(self):
-        from sfctl.widgets import _try_parse
+        from sfctl.widgets import try_parse
 
-        assert _try_parse("42") == "42"
+        assert try_parse("42") == "42"
 
     def test_non_string(self):
-        from sfctl.widgets import _try_parse
+        from sfctl.widgets import try_parse
 
-        assert _try_parse(123) == 123
+        assert try_parse(123) == 123
 
 
 class TestTraceEventDetailWidgets:

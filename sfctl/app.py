@@ -24,6 +24,26 @@ from sfctl import ids, ranking
 from sfctl.commands import NavigationProvider
 from sfctl.config import get_web_url, load_config, update_config
 from sfctl.constants import ARROW_DOWN, ARROW_UP, EM_DASH
+from sfctl.diff import diff_line_ref, language_from_filename, parse_content, strip_diff_preamble
+from sfctl.formatting import (
+    bump_headings,
+    clean_event_name,
+    format_duration,
+    format_event_line,
+    format_timestamp,
+    group_events,
+    rank_color,
+    sanitize,
+    trace_type_color,
+)
+from sfctl.history import (
+    feedback_for_entry,
+    format_history_entry,
+    has_meaningful_changes,
+    history_justification,
+    history_justification_texts,
+    history_ranking_changes,
+)
 from sfctl.ids import (
     Context,
     model_header_id,
@@ -39,39 +59,8 @@ from sfctl.ids import (
     vote_up_id,
 )
 from sfctl.models import Annotation, ModelData, ModelScores, ParsedContent, ProposalData
-from sfctl.parsing import (
-    _format_duration,
-    _sanitize,
-    bump_headings,
-    clean_event_name,
-    diff_line_ref,
-    feedback_for_entry,
-    format_event_line,
-    format_history_entry,
-    format_timestamp,
-    group_events,
-    has_meaningful_changes,
-    has_proposal_changes,
-    history_justification,
-    history_justification_texts,
-    history_ranking_changes,
-    language_from_filename,
-    parse_content,
-    parse_proposal,
-    proposal_all_changes,
-    rank_color,
-    strip_diff_preamble,
-    trace_type_color,
-)
-from sfctl.scoring import (
-    _latest_server_justification,
-    annotations_path,
-    justification_path,
-    load_annotations,
-    save_annotations,
-    scores_from_annotations,
-    scores_path,
-)
+from sfctl.proposal import has_proposal_changes, parse_proposal, proposal_all_changes
+from sfctl.scoring import ReviewState
 from sfctl.screens import (
     CommentsModal,
     DiffSearchModal,
@@ -152,14 +141,8 @@ class StarfleetApp(App):
             self.task_id = self.parsed.task_id or self.task_id
             self.models = self.parsed.models
 
-        self.annotations: list[list[Annotation]]
-        self.summary_text: str
-        self.review_comments: str
-        self.annotations, self.summary_text, self.review_comments = load_annotations(
-            self.task_id, len(self.models), self._get_history()
-        )
-        self._server_justification = _latest_server_justification(self._get_history())
-        self.scores: list[ModelScores] = scores_from_annotations(self.annotations)
+        self.review = ReviewState(self.task_id, len(self.models), self._get_history())
+        self.scores: list[ModelScores] = self.review.scores
         self._populated_models: set[int] = set()
         self._overview_populated = False
         self._trace_type_map: dict[str, int] = {}
@@ -195,7 +178,7 @@ class StarfleetApp(App):
             yield Static(self.rankings_summary(), id=ids.SCOREBOARD)
             if repo and repo != EM_DASH:
                 yield Static(
-                    f"[bold]Repo:[/bold] {_sanitize(repo)}",
+                    f"[bold]Repo:[/bold] {sanitize(repo)}",
                     id=ids.REPO_BAR,
                 )
             prompt = self.parsed.current_prompt or EM_DASH
@@ -291,7 +274,7 @@ class StarfleetApp(App):
         if setup_commands:
             setup_lines = "\n".join(
                 f"[dim]{format_timestamp(cmd.get('timestamp', ''))}[/dim]  "
-                f"{_sanitize(cmd.get('command', ''), 200)}"
+                f"{sanitize(cmd.get('command', ''), 200)}"
                 for cmd in setup_commands
             )
             tw.append(Static(f"[bold]Setup ({len(setup_commands)}):[/bold]"))
@@ -300,7 +283,7 @@ class StarfleetApp(App):
         grouped = group_events(tool_events)
         if grouped:
             timed = [
-                (name, evts, sum(e.get("wall_time") or 0 for e in evts))
+                (name, evts, sum(e.wall_time or 0 for e in evts))
                 for name, evts in grouped.items()
             ]
             timed.sort(key=lambda x: -x[2])
@@ -308,7 +291,7 @@ class StarfleetApp(App):
             for ename, events, total_ms in timed:
                 ti = self._trace_type_index(ename)
                 color = trace_type_color(ti)
-                time_str = f" {_format_duration(total_ms)}" if total_ms else ""
+                time_str = f" {format_duration(total_ms)}" if total_ms else ""
                 parts.append(f"[{color}]{ename}[/] [dim]{len(events)}x{time_str}[/]")
             tw.append(Static("  ".join(parts)))
             tw.append(LazyCollapsible.for_trace(
@@ -319,7 +302,7 @@ class StarfleetApp(App):
         if bash_history:
             bh_lines = "\n".join(
                 f"[dim]{format_timestamp(bh.get('timestamp', ''))}[/dim]  "
-                f"{_sanitize(bh.get('command', ''), 200)}"
+                f"{sanitize(bh.get('command', ''), 200)}"
                 for bh in bash_history
             )
             bh_c = Collapsible(
@@ -382,7 +365,7 @@ class StarfleetApp(App):
         letter = model_letter(idx)
 
         container = self.query_one(f"#{mid}", ScrollableContainer)
-        total = sum(1 for e in m.tool_events if isinstance(e, dict))
+        total = len(m.tool_events)
 
         tabs = TabbedContent(id=model_tabs_id(mid))
         await container.mount(tabs)
@@ -429,11 +412,11 @@ class StarfleetApp(App):
         await current_pane.mount_all([
             Static(self.rankings_summary(), id=ids.JUST_RANKINGS),
             Markdown(
-                self.summary_text or self._EMPTY_SUMMARY,
+                self.review.summary or self._EMPTY_SUMMARY,
                 id=ids.JUST_PREVIEW,
             ),
             TextArea(
-                self.summary_text, language="markdown",
+                self.review.summary, language="markdown",
                 show_line_numbers=True, id=ids.JUST_EDITOR,
             ),
         ])
@@ -451,7 +434,7 @@ class StarfleetApp(App):
         mid = model_id(0)
 
         container = self.query_one(f"#{mid}", ScrollableContainer)
-        total_events = sum(1 for e in p.tool_events if isinstance(e, dict))
+        total_events = len(p.tool_events)
 
         tabs = TabbedContent(id=model_tabs_id(mid))
         await container.mount(tabs)
@@ -505,10 +488,10 @@ class StarfleetApp(App):
         if p.duration:
             duration_str = p.duration
             if p.trace_elapsed_ms:
-                duration_str += f" (actual: {_format_duration(p.trace_elapsed_ms)})"
+                duration_str += f" (actual: {format_duration(p.trace_elapsed_ms)})"
             meta_parts.append(f"[bold]Duration:[/bold] {duration_str}")
         elif p.trace_elapsed_ms:
-            meta_parts.append(f"[bold]Duration:[/bold] {_format_duration(p.trace_elapsed_ms)}")
+            meta_parts.append(f"[bold]Duration:[/bold] {format_duration(p.trace_elapsed_ms)}")
         if p.solved:
             color = {"full": "green", "partial": "yellow", "no": "red"}.get(p.solved, "white")
             meta_parts.append(f"[bold]Solved:[/bold] [{color}]{p.solved}[/{color}]")
@@ -659,10 +642,10 @@ class StarfleetApp(App):
         # Lazy trace event loading
         if lazy.events and not lazy.populated:
             lazy.populated = True
-            dict_events = [ev for ev in lazy.events if isinstance(ev, dict)]
+            dict_events = list(lazy.events)
             collapsibles: list[Collapsible] = []
             for ev in dict_events:
-                ev_name = clean_event_name(str(ev.get("name", "")))
+                ev_name = clean_event_name(ev.name)
                 type_cls = f"trace-t{self._trace_type_index(ev_name)}"
                 inner_c = Collapsible(
                     title=format_event_line(ev),
@@ -899,7 +882,7 @@ class StarfleetApp(App):
         else:
             m = self._current_model()
             events = m.tool_events if m else []
-        dict_events = [e for e in events if isinstance(e, dict)]
+        dict_events = list(events)
         if not dict_events:
             self.notify("No trace events.", severity="warning")
             return
@@ -972,13 +955,13 @@ class StarfleetApp(App):
         def _on_result(result: tuple[int, str] | None) -> None:
             if result:
                 _, block = result
-                if self.summary_text:
-                    if not self.summary_text.endswith("\n"):
-                        self.summary_text += "\n"
-                    if not self.summary_text.endswith("\n\n"):
-                        self.summary_text += "\n"
-                self.summary_text += block
-                self._save_summary(self.summary_text)
+                if self.review.summary:
+                    if not self.review.summary.endswith("\n"):
+                        self.review.summary += "\n"
+                    if not self.review.summary.endswith("\n\n"):
+                        self.review.summary += "\n"
+                self.review.summary += block
+                self._save_summary(self.review.summary)
                 self._refresh_overview_annotations()
                 self.notify(f"Yanked snippet from {filename}")
 
@@ -1037,18 +1020,8 @@ class StarfleetApp(App):
         self._vote(-1)
 
     def action_reset_local(self) -> None:
-        for path in (
-            annotations_path(self.task_id),
-            scores_path(self.task_id),
-            justification_path(self.task_id),
-        ):
-            if path.exists():
-                path.unlink()
-        self.annotations, self.summary_text, self.review_comments = load_annotations(
-            self.task_id, len(self.models), self._get_history()
-        )
-        self._server_justification = _latest_server_justification(self._get_history())
-        self.scores = scores_from_annotations(self.annotations)
+        self.review.reset(len(self.models), self._get_history())
+        self.scores = self.review.scores
         self._refresh_overview_annotations()
         self.notify("Reset to server state.")
 
@@ -1062,7 +1035,7 @@ class StarfleetApp(App):
             if p.duration:
                 parts.append(f"[dim]{p.duration}[/dim]")
             if p.trace_elapsed_ms:
-                parts.append(f"[bold]{_format_duration(p.trace_elapsed_ms)} actual[/bold]")
+                parts.append(f"[bold]{format_duration(p.trace_elapsed_ms)} actual[/bold]")
             if p.rubrics:
                 parts.append(f"[dim]{len(p.rubrics)} rubrics[/dim]")
             return "  |  ".join(parts) if parts else ""
@@ -1100,27 +1073,16 @@ class StarfleetApp(App):
 
     def add_annotation(self, model_index: int, annotation: Annotation) -> None:
         """Append an annotation for a model, persist, and refresh UI."""
-        if 0 <= model_index < len(self.annotations):
-            self.annotations[model_index].append(annotation)
-        self.scores = scores_from_annotations(self.annotations)
-        save_annotations(self.task_id, self.annotations, self.summary_text, self._server_justification)
+        self.review.add_annotation(model_index, annotation)
+        self.scores = self.review.scores
 
     def _save_summary(self, text: str) -> None:
         """Update the summary text and persist."""
-        self.summary_text = text
-        self._persist()
+        self.review.set_summary(text)
 
     def _save_comments(self, text: str) -> None:
         """Update review comments and persist."""
-        self.review_comments = text
-        self._persist()
-
-    def _persist(self) -> None:
-        """Persist all annotations, summary, and comments to disk."""
-        save_annotations(
-            self.task_id, self.annotations, self.summary_text,
-            self._server_justification, self.review_comments,
-        )
+        self.review.set_comments(text)
 
     def _refresh_overview_annotations(self) -> None:
         """Refresh the overview summary and rankings."""
@@ -1130,7 +1092,7 @@ class StarfleetApp(App):
             rankings = self.query_one(f"#{ids.JUST_RANKINGS}", Static)
             rankings.update(self.rankings_summary())
             preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
-            preview.update(self.summary_text or self._EMPTY_SUMMARY)
+            preview.update(self.review.summary or self._EMPTY_SUMMARY)
         except Exception:
             pass
 
@@ -1150,7 +1112,7 @@ class StarfleetApp(App):
             preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
         except Exception:
             return
-        editor.text = self.summary_text
+        editor.text = self.review.summary
         preview.display = False
         editor.display = True
         editor.focus()
@@ -1164,7 +1126,7 @@ class StarfleetApp(App):
         if editor.display:
             self._save_summary(editor.text)
             editor.display = False
-            preview.update(self.summary_text or self._EMPTY_SUMMARY)
+            preview.update(self.review.summary or self._EMPTY_SUMMARY)
             preview.display = True
 
     def action_add_comment(self) -> None:
@@ -1183,13 +1145,13 @@ class StarfleetApp(App):
 
         def _on_result(result: str | None) -> None:
             if result:
-                if self.review_comments:
-                    if not self.review_comments.endswith("\n"):
-                        self.review_comments += "\n"
-                    if not self.review_comments.endswith("\n\n"):
-                        self.review_comments += "\n"
-                self.review_comments += result
-                self._save_comments(self.review_comments)
+                if self.review.comments:
+                    if not self.review.comments.endswith("\n"):
+                        self.review.comments += "\n"
+                    if not self.review.comments.endswith("\n\n"):
+                        self.review.comments += "\n"
+                self.review.comments += result
+                self._save_comments(self.review.comments)
                 self.notify("Comment added.")
 
         self.push_screen(ReviewCommentModal(snippet, context, lang), _on_result)
@@ -1198,13 +1160,13 @@ class StarfleetApp(App):
         def _on_result(text: str) -> None:
             self._save_comments(text)
 
-        self.push_screen(CommentsModal(self.review_comments), _on_result)
+        self.push_screen(CommentsModal(self.review.comments), _on_result)
 
     def action_copy_comments(self) -> None:
-        if not self.review_comments.strip():
+        if not self.review.comments.strip():
             self.notify("No comments to copy.", severity="warning")
             return
-        self.copy_to_clipboard(self.review_comments)
+        self.copy_to_clipboard(self.review.comments)
         self.notify("Comments copied to clipboard.")
 
     def on_key(self, event) -> None:
@@ -1295,11 +1257,8 @@ class StarfleetApp(App):
         self.task_id = (
             new_data.get("task", {}).get("taskId") or self.parsed.task_id or self.task_id
         )
-        self.annotations, self.summary_text, self.review_comments = load_annotations(
-            self.task_id, len(self.models), self._get_history()
-        )
-        self._server_justification = _latest_server_justification(self._get_history())
-        self.scores = scores_from_annotations(self.annotations)
+        self.review.reload(self.task_id, len(self.models), self._get_history())
+        self.scores = self.review.scores
         self._trace_type_map = {}
         self.sub_title = f"Task {self.task_id} (refreshed)"
         self.refresh(recompose=True)
@@ -1318,7 +1277,7 @@ class StarfleetApp(App):
         text = build_clipboard_text(
             self.task_id,
             self.rankings_summary(),
-            self.summary_text,
+            self.review.summary,
         )
         if not text.strip():
             self.notify("Nothing to copy.", severity="warning")

@@ -5,9 +5,10 @@ Pure functions -- no Textual imports, no filesystem access, no side effects.
 
 from __future__ import annotations
 
+from sfctl.formatting import bump_headings, rank_color
+from sfctl.history import get_full_ranking
 from sfctl.ids import model_id, model_letter
 from sfctl.models import ModelData, ModelScores
-from sfctl.parsing import bump_headings, get_full_ranking, rank_color
 
 
 def nav_items(models: list[ModelData]) -> list[tuple[str, str]]:

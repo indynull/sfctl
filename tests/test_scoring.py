@@ -7,11 +7,11 @@ TASK_ID = "t-EXAMPLE001"
 
 class TestScoringPersistence:
     def test_safe_task_id(self):
-        from sfctl.scoring import _safe_task_id
+        from sfctl.scoring import safe_task_id
 
-        assert _safe_task_id("t-abc123") == "t-abc123"
-        assert _safe_task_id("t-abc/def") == "t-abc_def"
-        assert _safe_task_id("bad!chars@here") == "bad_chars_here"
+        assert safe_task_id("t-abc123") == "t-abc123"
+        assert safe_task_id("t-abc/def") == "t-abc_def"
+        assert safe_task_id("bad!chars@here") == "bad_chars_here"
 
 
 class TestAnnotationPersistence:

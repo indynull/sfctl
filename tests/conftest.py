@@ -18,7 +18,7 @@ def fixture_data() -> dict:
 
 @pytest.fixture
 def parsed(fixture_data):
-    from sfctl.parsing import parse_content
+    from sfctl.diff import parse_content
 
     return parse_content(fixture_data["content"])
 

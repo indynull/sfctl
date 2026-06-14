@@ -156,7 +156,7 @@ class TestVoting:
             await pilot.press("ctrl+r")
             await pilot.pause()
             assert not scoring.annotations_path(app.task_id).exists()
-            assert all(len(a) == 0 for a in app.annotations)
+            assert all(len(a) == 0 for a in app.review.annotations)
 
     @pytest.mark.asyncio
     async def test_vote_on_overview_warns(self, app):
@@ -571,7 +571,7 @@ class TestOverview:
             await pilot.press("escape")
             await pilot.pause()
             await pilot.press("q")
-        assert app.summary_text == "saved on quit"
+        assert app.review.summary == "saved on quit"
 
     @pytest.mark.asyncio
     async def test_add_annotation_updates_overview(self, app):
@@ -582,7 +582,7 @@ class TestOverview:
             await pilot.press("0")
             await pilot.pause()
             app.add_annotation(0, Annotation(context="code", sentiment=1, comment="nice code"))
-            assert len(app.annotations[0]) == 1
+            assert len(app.review.annotations[0]) == 1
             assert app.scores[0].code == 1
 
     @pytest.mark.asyncio
@@ -591,14 +591,14 @@ class TestOverview:
             # Navigate to overview first so it's populated
             await pilot.press("0")
             await pilot.pause()
-            assert app.summary_text == "" or "yank" not in app.summary_text.lower()
+            assert app.review.summary == "" or "yank" not in app.review.summary.lower()
             # Simulate a yank result (what the modal callback does)
             block = "**A** `foo.py:L12` nice fix\n```diff\n+x=1\n```\n"
-            app.summary_text += block
-            app._save_summary(app.summary_text)
+            app.review.summary += block
+            app._save_summary(app.review.summary)
             app._refresh_overview_annotations()
             await pilot.pause()
-            assert "foo.py" in app.summary_text
+            assert "foo.py" in app.review.summary
 
 
 class TestTabNavigation:
@@ -933,7 +933,7 @@ class TestMiscActions:
 
         async with app.run_test():
             app.add_annotation(0, Annotation(context="response", sentiment=-1, comment="bad"))
-            assert len(app.annotations[0]) == 1
+            assert len(app.review.annotations[0]) == 1
             assert app.scores[0].response == -1
 
 
@@ -1081,26 +1081,26 @@ class TestBuildClipboardText:
         text = build_clipboard_text(
             app.task_id,
             app.rankings_summary(),
-            app.summary_text,
+            app.review.summary,
         )
         assert TASK_ID in text
 
 
 class TestStripMarkup:
     def test_strips_tags(self):
-        from sfctl.screens import _strip_markup
+        from sfctl.screens import strip_markup
 
-        assert _strip_markup("[bold]hello[/bold]") == "hello"
+        assert strip_markup("[bold]hello[/bold]") == "hello"
 
     def test_no_tags(self):
-        from sfctl.screens import _strip_markup
+        from sfctl.screens import strip_markup
 
-        assert _strip_markup("plain text") == "plain text"
+        assert strip_markup("plain text") == "plain text"
 
     def test_nested_tags(self):
-        from sfctl.screens import _strip_markup
+        from sfctl.screens import strip_markup
 
-        assert _strip_markup("[green]A(+3)[/]") == "A(+3)"
+        assert strip_markup("[green]A(+3)[/]") == "A(+3)"
 
 
 class TestProposalApp:

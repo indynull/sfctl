@@ -40,7 +40,7 @@ class TestParseContent:
         for m in parsed.models:
             assert len(m.tool_events) > 0
             for ev in m.tool_events:
-                assert "name" in ev
+                assert hasattr(ev, "name")
 
     def test_messages_parsed(self, parsed):
         for m in parsed.models:
@@ -51,7 +51,7 @@ class TestParseContent:
 
 class TestExtractFileDiffs:
     def test_split(self):
-        from sfctl.parsing import extract_file_diffs
+        from sfctl.diff import extract_file_diffs
 
         diff = (
             "diff --git a/foo.py b/foo.py\n--- a/foo.py\n+++ b/foo.py\n"
@@ -66,13 +66,13 @@ class TestExtractFileDiffs:
         assert "+new" in files[0].diff
 
     def test_empty(self):
-        from sfctl.parsing import extract_file_diffs
+        from sfctl.diff import extract_file_diffs
 
         assert extract_file_diffs("") == []
         assert extract_file_diffs("   ") == []
 
     def test_short_diff_git_header(self):
-        from sfctl.parsing import extract_file_diffs
+        from sfctl.diff import extract_file_diffs
 
         diff = "diff --git a/foo.py\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-x\n+y\n"
         files = extract_file_diffs(diff)
@@ -80,7 +80,7 @@ class TestExtractFileDiffs:
         assert files[0].filename == "foo.py"
 
     def test_plus_plus_plus_fallback(self):
-        from sfctl.parsing import extract_file_diffs
+        from sfctl.diff import extract_file_diffs
 
         diff = "+++ b/hello.py\n@@ -1 +1 @@\n-x\n+y\n"
         files = extract_file_diffs(diff)
@@ -88,7 +88,7 @@ class TestExtractFileDiffs:
         assert files[0].filename == "hello.py"
 
     def test_unknown_file_fallback(self):
-        from sfctl.parsing import extract_file_diffs
+        from sfctl.diff import extract_file_diffs
 
         diff = "some random diff content\n@@ -1 +1 @@\n-x\n+y\n"
         files = extract_file_diffs(diff)
@@ -98,7 +98,7 @@ class TestExtractFileDiffs:
 
 class TestBuildDiffLineMap:
     def test_hunk_header_mapping(self):
-        from sfctl.parsing import build_diff_line_map
+        from sfctl.diff import build_diff_line_map
 
         diff = (
             "diff --git a/f.py b/f.py\n--- a/f.py\n+++ b/f.py\n"
@@ -113,13 +113,13 @@ class TestBuildDiffLineMap:
 
 class TestDiffLineRef:
     def test_single_line(self):
-        from sfctl.parsing import diff_line_ref
+        from sfctl.diff import diff_line_ref
 
         diff = "@@ -1,3 +10,3 @@\n context\n-old\n+new\n"
         assert diff_line_ref(diff, 1, 1) == "L10"
 
     def test_range(self):
-        from sfctl.parsing import diff_line_ref
+        from sfctl.diff import diff_line_ref
 
         diff = "@@ -1,3 +10,3 @@\n ctx\n-old\n+new\n"
         ref = diff_line_ref(diff, 1, 3)
@@ -127,7 +127,7 @@ class TestDiffLineRef:
         assert "-L" in ref
 
     def test_reversed_range(self):
-        from sfctl.parsing import diff_line_ref
+        from sfctl.diff import diff_line_ref
 
         diff = "@@ -1,3 +10,3 @@\n ctx\n-old\n+new\n"
         ref = diff_line_ref(diff, 3, 1)
@@ -136,7 +136,7 @@ class TestDiffLineRef:
 
 class TestBumpHeadings:
     def test_shift_up(self):
-        from sfctl.parsing import bump_headings
+        from sfctl.formatting import bump_headings
 
         text = "# Title\n## Section\n### Sub"
         result = bump_headings(text, parent_level=2)
@@ -145,46 +145,46 @@ class TestBumpHeadings:
         assert "##### Sub" in result
 
     def test_no_headings(self):
-        from sfctl.parsing import bump_headings
+        from sfctl.formatting import bump_headings
 
         assert bump_headings("plain text") == "plain text"
 
     def test_empty(self):
-        from sfctl.parsing import bump_headings
+        from sfctl.formatting import bump_headings
 
         assert bump_headings("") is not None
 
 
 class TestRankingHelpers:
     def test_get_full_ranking_preference(self, fixture_data):
-        from sfctl.parsing import get_full_ranking
+        from sfctl.history import get_full_ranking
 
         ranking = get_full_ranking(fixture_data["history"][0], "preference_ranking")
         assert ranking.index("C") < ranking.index("A") < ranking.index("B")
 
     def test_get_full_ranking_response_quality(self, fixture_data):
-        from sfctl.parsing import get_full_ranking
+        from sfctl.history import get_full_ranking
 
         ranking = get_full_ranking(fixture_data["history"][0], "response_quality_ranking")
         assert "C" in ranking and "A" in ranking and "B" in ranking
 
     def test_get_full_ranking_missing_key(self, fixture_data):
-        from sfctl.parsing import get_full_ranking
+        from sfctl.history import get_full_ranking
 
         assert get_full_ranking(fixture_data["history"][0], "nonexistent_ranking") == ""
 
     def test_get_full_ranking_empty_value(self):
-        from sfctl.parsing import get_full_ranking
+        from sfctl.history import get_full_ranking
 
         assert get_full_ranking({"r": {"value": []}}, "r") == ""
 
     def test_get_full_ranking_items_without_id(self):
-        from sfctl.parsing import get_full_ranking
+        from sfctl.history import get_full_ranking
 
         assert get_full_ranking({"r": {"value": [{"id": ""}, {"id": None}]}}, "r") == ""
 
     def test_to_label(self):
-        from sfctl.parsing import to_label
+        from sfctl.history import to_label
 
         assert to_label("model_a") == "A"
         assert to_label("model_b") == "B"
@@ -192,7 +192,7 @@ class TestRankingHelpers:
         assert to_label("") == ""
 
     def test_rank_color(self):
-        from sfctl.parsing import rank_color
+        from sfctl.formatting import rank_color
 
         assert rank_color(0, 3) == "green"
         assert rank_color(1, 3) == "yellow"
@@ -202,14 +202,14 @@ class TestRankingHelpers:
 
 class TestTraceFormatting:
     def test_clean_event_name(self):
-        from sfctl.parsing import clean_event_name
+        from sfctl.formatting import clean_event_name
 
         assert clean_event_name("__sf_tool_event_thinking__") == "thinking"
         assert clean_event_name("list_dir") == "list_dir"
         assert clean_event_name("") == "unknown"
 
     def test_group_events(self, parsed):
-        from sfctl.parsing import group_events
+        from sfctl.formatting import group_events
 
         groups = group_events(parsed.models[0].tool_events)
         assert "thinking" in groups
@@ -218,7 +218,7 @@ class TestTraceFormatting:
             assert len(group_events(m.tool_events)) >= 2
 
     def test_format_event_line_normal(self):
-        from sfctl.parsing import format_event_line
+        from sfctl.formatting import format_event_line
 
         ev = {"name": "list_dir", "exit_code": "no_error", "wall_time": 0}
         line = format_event_line(ev)
@@ -226,7 +226,7 @@ class TestTraceFormatting:
         assert "no_error" not in line
 
     def test_format_event_line_error(self):
-        from sfctl.parsing import format_event_line
+        from sfctl.formatting import format_event_line
 
         ev = {"name": "run_terminal_cmd", "exit_code": "error", "wall_time": 500}
         line = format_event_line(ev)
@@ -234,7 +234,7 @@ class TestTraceFormatting:
         assert "500ms" in line
 
     def test_trace_type_color_cycles(self):
-        from sfctl.parsing import trace_type_color
+        from sfctl.formatting import trace_type_color
 
         assert trace_type_color(0) == trace_type_color(10)
         assert len({trace_type_color(i) for i in range(10)}) > 1
@@ -242,81 +242,81 @@ class TestTraceFormatting:
 
 class TestToolNameFromInput:
     def test_pascal_case_variant(self):
-        from sfctl.parsing import _tool_name_from_input
+        from sfctl.proposal import tool_name_from_input
 
-        assert _tool_name_from_input('{"variant":"ReadFile"}') == "read_file"
-        assert _tool_name_from_input('{"variant":"SearchReplace"}') == "search_replace"
-        assert _tool_name_from_input('{"variant":"Grep"}') == "grep"
-        assert _tool_name_from_input('{"variant":"ListDir"}') == "list_dir"
-        assert _tool_name_from_input('{"variant":"Bash"}') == "bash"
-        assert _tool_name_from_input('{"variant":"TodoWrite"}') == "todo_write"
-        assert _tool_name_from_input('{"variant":"UpdateGoal"}') == "update_goal"
+        assert tool_name_from_input('{"variant":"ReadFile"}') == "read_file"
+        assert tool_name_from_input('{"variant":"SearchReplace"}') == "search_replace"
+        assert tool_name_from_input('{"variant":"Grep"}') == "grep"
+        assert tool_name_from_input('{"variant":"ListDir"}') == "list_dir"
+        assert tool_name_from_input('{"variant":"Bash"}') == "bash"
+        assert tool_name_from_input('{"variant":"TodoWrite"}') == "todo_write"
+        assert tool_name_from_input('{"variant":"UpdateGoal"}') == "update_goal"
 
     def test_dict_input(self):
-        from sfctl.parsing import _tool_name_from_input
+        from sfctl.proposal import tool_name_from_input
 
-        assert _tool_name_from_input({"variant": "ReadFile"}) == "read_file"
+        assert tool_name_from_input({"variant": "ReadFile"}) == "read_file"
 
     def test_empty_input(self):
-        from sfctl.parsing import _tool_name_from_input
+        from sfctl.proposal import tool_name_from_input
 
-        assert _tool_name_from_input("") == ""
-        assert _tool_name_from_input("{}") == ""
-        assert _tool_name_from_input({}) == ""
+        assert tool_name_from_input("") == ""
+        assert tool_name_from_input("{}") == ""
+        assert tool_name_from_input({}) == ""
 
 
 class TestParseJsonField:
     def test_valid_json(self):
-        from sfctl.parsing import _parse_json_field
+        from sfctl.diff import parse_json_field
 
-        assert _parse_json_field("[1,2,3]") == [1, 2, 3]
+        assert parse_json_field("[1,2,3]") == [1, 2, 3]
 
     def test_none(self):
-        from sfctl.parsing import _parse_json_field
+        from sfctl.diff import parse_json_field
 
-        assert _parse_json_field(None) == []
+        assert parse_json_field(None) == []
 
     def test_empty_string(self):
-        from sfctl.parsing import _parse_json_field
+        from sfctl.diff import parse_json_field
 
-        assert _parse_json_field("") == []
+        assert parse_json_field("") == []
 
     def test_invalid_json(self):
-        from sfctl.parsing import _parse_json_field
+        from sfctl.diff import parse_json_field
 
-        assert _parse_json_field("not json") == []
+        assert parse_json_field("not json") == []
 
 
 class TestSfValue:
     def test_string_value(self):
-        from sfctl.parsing import _sf_value
+        from sfctl.proposal import sf_value
 
-        assert _sf_value({"_sf_rich": True, "value": "hello"}) == "hello"
+        assert sf_value({"_sf_rich": True, "value": "hello"}) == "hello"
 
     def test_list_value(self):
-        from sfctl.parsing import _sf_value
+        from sfctl.proposal import sf_value
 
-        assert _sf_value({"_sf_rich": True, "value": ["a", "b"]}) == "a, b"
+        assert sf_value({"_sf_rich": True, "value": ["a", "b"]}) == "a, b"
 
     def test_none_field(self):
-        from sfctl.parsing import _sf_value
+        from sfctl.proposal import sf_value
 
-        assert _sf_value(None) == ""
+        assert sf_value(None) == ""
 
     def test_empty_dict(self):
-        from sfctl.parsing import _sf_value
+        from sfctl.proposal import sf_value
 
-        assert _sf_value({}) == ""
+        assert sf_value({}) == ""
 
     def test_missing_value(self):
-        from sfctl.parsing import _sf_value
+        from sfctl.proposal import sf_value
 
-        assert _sf_value({"_sf_rich": True}) == ""
+        assert sf_value({"_sf_rich": True}) == ""
 
 
 class TestExtractRubrics:
     def test_basic(self):
-        from sfctl.parsing import _extract_rubrics
+        from sfctl.proposal import extract_rubrics
 
         rubrics = {
             "items": [
@@ -324,20 +324,20 @@ class TestExtractRubrics:
                 {"nestedAnnotations": {"rubric": {"_sf_rich": True, "value": "Rubric two"}}},
             ]
         }
-        result = _extract_rubrics(rubrics)
+        result = extract_rubrics(rubrics)
         assert result == ["Rubric one", "Rubric two"]
 
     def test_empty(self):
-        from sfctl.parsing import _extract_rubrics
+        from sfctl.proposal import extract_rubrics
 
-        assert _extract_rubrics(None) == []
-        assert _extract_rubrics({}) == []
-        assert _extract_rubrics({"items": []}) == []
+        assert extract_rubrics(None) == []
+        assert extract_rubrics({}) == []
+        assert extract_rubrics({"items": []}) == []
 
 
 class TestParseProposal:
     def test_basic_fields(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert p.repo_url == "https://github.com/example/repo"
@@ -348,7 +348,7 @@ class TestParseProposal:
         assert p.solved == "partial"
 
     def test_rubrics(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert len(p.rubrics) == 4
@@ -356,13 +356,13 @@ class TestParseProposal:
         assert p.rubrics[-1] == "Rubric four"
 
     def test_prompt(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert p.prompt == "Implement feature X"
 
     def test_code_patch(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert "diff --git" in p.code_patch
@@ -370,33 +370,33 @@ class TestParseProposal:
         assert p.file_diffs[0].filename == "foo.py"
 
     def test_bash_history(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert len(p.bash_history) == 2
         assert p.bash_history[1]["command"] == "uv run pytest"
 
     def test_issues(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert p.issues == "Model failed on edge case"
         assert len(p.issue_comments) == 1
 
     def test_model_id(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert p.model_id == "test-model-v1"
 
     def test_trace_ref(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert p.trace_ref == "coding-question/worker/session/trace.json"
 
     def test_trace_data_real_format(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         trace = {
             "trace": [
@@ -414,16 +414,16 @@ class TestParseProposal:
         }
         p = parse_proposal(proposal_data["history"], trace)
         assert len(p.tool_events) == 3  # 2 tool_calls + 1 thinking
-        assert p.tool_events[0]["name"] == "list_dir"
-        assert p.tool_events[0]["title"] == "List `.`"
-        assert p.tool_events[1]["name"] == "thinking"
-        assert p.tool_events[2]["name"] == "read_file"
-        assert not any(e["name"] == "assistant" for e in p.tool_events)
+        assert p.tool_events[0].name == "list_dir"
+        assert p.tool_events[0].title == "List `.`"
+        assert p.tool_events[1].name == "thinking"
+        assert p.tool_events[2].name == "read_file"
+        assert not any(e.name == "assistant" for e in p.tool_events)
         assert p.trace_summary == "x" * 300
         assert len(p.messages) == 3
 
     def test_trace_data_legacy_format(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         trace = {
             "trace": "Summary of work done",
@@ -433,11 +433,11 @@ class TestParseProposal:
         p = parse_proposal(proposal_data["history"], trace)
         assert p.trace_summary == "Summary of work done"
         assert len(p.tool_events) == 1
-        assert p.tool_events[0]["name"] == "list_dir"
+        assert p.tool_events[0].name == "list_dir"
         assert len(p.messages) == 1
 
     def test_no_trace(self, proposal_data):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
         assert p.trace_summary == ""
@@ -445,7 +445,7 @@ class TestParseProposal:
         assert p.messages == []
 
     def test_empty_history(self):
-        from sfctl.parsing import parse_proposal
+        from sfctl.proposal import parse_proposal
 
         p = parse_proposal([])
         assert p.repo_url == ""
@@ -454,7 +454,7 @@ class TestParseProposal:
 
 class TestProposalRubricChanges:
     def test_additions(self):
-        from sfctl.parsing import proposal_rubric_changes
+        from sfctl.proposal import proposal_rubric_changes
 
         prev = ["A", "B"]
         curr = ["A", "B", "C"]
@@ -464,7 +464,7 @@ class TestProposalRubricChanges:
         assert "[green]" in changes[0]
 
     def test_removals(self):
-        from sfctl.parsing import proposal_rubric_changes
+        from sfctl.proposal import proposal_rubric_changes
 
         prev = ["A", "B", "C"]
         curr = ["A", "C"]
@@ -474,6 +474,6 @@ class TestProposalRubricChanges:
         assert "[red]" in changes[0]
 
     def test_no_changes(self):
-        from sfctl.parsing import proposal_rubric_changes
+        from sfctl.proposal import proposal_rubric_changes
 
         assert proposal_rubric_changes(["A", "B"], ["A", "B"]) == []

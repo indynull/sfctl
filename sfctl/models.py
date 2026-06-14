@@ -57,6 +57,32 @@ class HistoryEntry(BaseConfig):
     email: str | None = None
     reviewLevel: float | None = None
     feedback: FeedbackResponse | None = None
+    isEditAction: bool = False
+
+    def ranking_value(self, key: str) -> list[RankingItem]:
+        """Return the ranking list for a given key, or empty list."""
+        wrapper = getattr(self, key, None)
+        if not isinstance(wrapper, ValueWrapper) or not isinstance(wrapper.value, list):
+            return []
+        return wrapper.value
+
+    def justification_text(self) -> str:
+        """Extract the justification string."""
+        if not self.justification or not isinstance(self.justification.value, str):
+            return ""
+        return self.justification.value
+
+    def confidence_text(self) -> str:
+        """Extract the confidence string."""
+        if not self.confidence or not isinstance(self.confidence.value, str):
+            return ""
+        return self.confidence.value
+
+    def feedback_entries(self) -> list[dict]:
+        """Return feedback entries as dicts."""
+        if not self.feedback:
+            return []
+        return [e.model_dump() for e in self.feedback.entries]
 
 
 class ContentItem(BaseConfig):
@@ -85,14 +111,31 @@ class FileDiff:
 
 
 @dataclass(slots=True)
+class TraceEvent:
+    """A single trace event (tool call, thinking block, etc.)."""
+
+    name: str = ""
+    title: str = ""
+    wall_time: int | float | None = None
+    exit_code: str = "no_error"
+    timestamp: int | None = None
+    input: str | dict = ""
+    output: str | dict = ""
+
+    def get(self, key: str, default: object = None) -> object:
+        """Dict-compatible accessor for gradual migration."""
+        return getattr(self, key, default)
+
+
+@dataclass(slots=True)
 class ModelData:
     """Parsed model trace data for one model in a task."""
 
     name: str
     diff: str
     trace_summary: str | None
-    messages: list
-    tool_events: list
+    messages: list[dict] = field(default_factory=list)
+    tool_events: list[TraceEvent] = field(default_factory=list)
     file_diffs: list[FileDiff] = field(default_factory=list)
 
 
@@ -129,8 +172,8 @@ class ProposalData:
     trace_ref: str = ""
     trace_summary: str = ""
     trace_elapsed_ms: int | None = None
-    tool_events: list = field(default_factory=list)
-    messages: list = field(default_factory=list)
+    tool_events: list[TraceEvent] = field(default_factory=list)
+    messages: list[dict] = field(default_factory=list)
 
 
 @dataclass(slots=True)

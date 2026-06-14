@@ -88,6 +88,15 @@ class TestCheckResponse:
 
 
 class TestRequestWithRetry:
+    @pytest.fixture(autouse=True)
+    def _fast_retry(self, monkeypatch):
+        """Eliminate retry sleep in tests."""
+        import sfctl.api as api_mod
+
+        async def _nosleep(_seconds):
+            pass
+
+        monkeypatch.setattr(api_mod.asyncio, "sleep", _nosleep)
     @pytest.mark.asyncio
     async def test_success_first_try(self):
         from sfctl.api import _request_with_retry
