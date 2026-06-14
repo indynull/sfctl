@@ -242,9 +242,6 @@ class DiffSearchModal(ModalScreen[DiffSearchResult | None]):
     def action_cursor_down(self) -> None:
         self._move_highlight(1)
 
-    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
-        self.query_one(f"#{ids.DIFF_SEARCH_INPUT}", Input).focus()
-
     def action_toggle_mode(self) -> None:
         self._grep = not self._grep
         label = self.query_one("#diff-search-mode", Label)
@@ -380,8 +377,7 @@ class EventSearchModal(ModalScreen[int | None]):
     def action_cursor_down(self) -> None:
         self._move_highlight(1)
 
-    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
-        self.query_one(f"#{ids.EVENT_SEARCH_INPUT}", Input).focus()
+
 
     def action_toggle_mode(self) -> None:
         self._grep = not self._grep

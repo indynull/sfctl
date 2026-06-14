@@ -97,7 +97,7 @@ def load_annotations(
         for i in range(num_models):
             raw = data.get(str(i), [])
             annotations.append([Annotation.from_dict(d) for d in raw])
-        if server_just and server_just != prev_server:
+        if server_just and (server_just != prev_server or not local_summary.strip()):
             return annotations, server_just
         return annotations, local_summary
 

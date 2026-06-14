@@ -235,7 +235,7 @@ class StarfleetApp(App):
                     pass
             return
 
-        initial = model_id(0) if self.models else ids.OVERVIEW
+        initial = ids.OVERVIEW
         with (
             Vertical(id=ids.CONTENT_AREA),
             ContentSwitcher(initial=initial, id=ids.MAIN_SWITCHER),
@@ -627,11 +627,10 @@ class StarfleetApp(App):
             self.notify(f"Loaded proposal {self.task_id}")
             self._maybe_show_tutorial()
             return
+        await self._populate_overview()
         if self.models:
-            await self._populate_model(self.current_model_index)
             self.notify(f"Loaded task {self.task_id} ({len(self.models)} models)")
         else:
-            await self._populate_overview()
             self.notify(f"Loaded task {self.task_id}")
         self._update_scoreboard()
         self._maybe_show_tutorial()
@@ -1031,8 +1030,6 @@ class StarfleetApp(App):
         self._vote(-1)
 
     def action_reset_local(self) -> None:
-        self.annotations = [[] for _ in range(len(self.models))]
-        self.summary_text = ""
         for path in (
             annotations_path(self.task_id),
             scores_path(self.task_id),
@@ -1040,8 +1037,13 @@ class StarfleetApp(App):
         ):
             if path.exists():
                 path.unlink()
-        self.scores = [ModelScores() for _ in range(len(self.models))]
-        self.notify("Local annotations and scores reset.")
+        self.annotations, self.summary_text = load_annotations(
+            self.task_id, len(self.models), self._get_history()
+        )
+        self._server_justification = _latest_server_justification(self._get_history())
+        self.scores = scores_from_annotations(self.annotations)
+        self._refresh_overview_annotations()
+        self.notify("Reset to server state.")
 
     def rankings_summary(self) -> str:
         if self.task_type == TaskType.PROJECT_PROPOSAL and self.proposal:
@@ -1231,8 +1233,23 @@ class StarfleetApp(App):
         self.task_id = (
             new_data.get("task", {}).get("taskId") or self.parsed.task_id or self.task_id
         )
+        self.annotations, self.summary_text = load_annotations(
+            self.task_id, len(self.models), self._get_history()
+        )
+        self._server_justification = _latest_server_justification(self._get_history())
+        self.scores = scores_from_annotations(self.annotations)
+        self._trace_type_map = {}
         self.sub_title = f"Task {self.task_id} (refreshed)"
         self.refresh(recompose=True)
+        self.call_later(self._post_refresh_populate)
+
+    @work
+    async def _post_refresh_populate(self) -> None:
+        if self.task_type == TaskType.PROJECT_PROPOSAL:
+            await self._populate_proposal_model()
+        elif self.task_type != TaskType.UNKNOWN:
+            await self._populate_overview()
+        self._update_scoreboard()
         self.notify("Data refreshed.")
 
     def action_copy_summary(self) -> None:
