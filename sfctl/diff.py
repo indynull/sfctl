@@ -84,6 +84,83 @@ def parse_diff_lines(diff_text: str) -> list[DiffLine]:
     return result
 
 
+_TRIPLE_QUOTES = ('"""', "'''")
+
+
+def build_highlighted_sides(
+    diff_lines: list[DiffLine],
+) -> tuple[list[str], list[int], list[str], list[int]]:
+    """Build old-side and new-side text for tree-sitter highlighting.
+
+    Splits a unified diff into two coherent views (old = ctx+del,
+    new = ctx+add) so that tree-sitter can parse each side without
+    seeing interleaved added/deleted code.  Hunk headers are replaced
+    with blank lines and orphaned triple-quote closers at hunk
+    boundaries get a synthetic opener injected so that tree-sitter
+    doesn't treat them as string-start tokens.
+
+    Returns (new_lines, new_map, old_lines, old_map) where each map
+    entry gives the unified diff-line index for that result line,
+    or -1 for synthetic balancer lines.
+    """
+    new_lines, new_map = _build_side(diff_lines, frozenset({"ctx", "add", "hunk"}))
+    old_lines, old_map = _build_side(diff_lines, frozenset({"ctx", "del", "hunk"}))
+    return new_lines, new_map, old_lines, old_map
+
+
+def _count_triple_quotes(text: str) -> int:
+    return sum(text.count(tq) for tq in _TRIPLE_QUOTES)
+
+
+def _build_side(
+    diff_lines: list[DiffLine],
+    include_kinds: frozenset[str],
+) -> tuple[list[str], list[int]]:
+    hunk_starts = [i for i, dl in enumerate(diff_lines) if dl.kind == "hunk"]
+
+    # Detect orphaned triple-quote closers in leading context of each hunk.
+    # A hunk's leading context is the run of ``ctx`` lines immediately after
+    # the ``@@`` header.  If the first triple-quote in that run has no prior
+    # opener within the hunk, it is closing a construct that started above
+    # the visible diff — we mark the hunk so a synthetic opener is injected.
+    orphaned: set[int] = set()
+    for h_pos, h_start in enumerate(hunk_starts):
+        h_end = hunk_starts[h_pos + 1] if h_pos + 1 < len(hunk_starts) else len(diff_lines)
+        balance = 0
+        for j in range(h_start + 1, h_end):
+            dl = diff_lines[j]
+            if dl.kind != "ctx" or dl.kind not in include_kinds:
+                break
+            count = _count_triple_quotes(dl.text)
+            if count > 0 and balance == 0:
+                orphaned.add(h_start)
+            balance += count
+
+    result: list[str] = []
+    rmap: list[int] = []
+
+    for i, dl in enumerate(diff_lines):
+        if dl.kind not in include_kinds:
+            continue
+        if dl.kind == "hunk":
+            result.append("")
+            rmap.append(i)
+            if i in orphaned:
+                result.append('"""')
+                rmap.append(-1)
+        else:
+            result.append(dl.text)
+            rmap.append(i)
+
+    # If the overall triple-quote count is odd (e.g. a trailing context line
+    # opens a string whose close is below the diff), append a balancer.
+    if _count_triple_quotes("\n".join(result)) % 2 == 1:
+        result.append('"""')
+        rmap.append(-1)
+
+    return result, rmap
+
+
 def build_diff_line_map(diff_text: str) -> dict[int, int]:
     """Map diff-text line indices to real source line numbers.
 

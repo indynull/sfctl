@@ -134,6 +134,40 @@ class TestDiffLineRef:
         assert "-L" in ref
 
 
+class TestBuildHighlightedSides:
+    def test_splits_old_new(self):
+        from sfctl.diff import build_highlighted_sides, parse_diff_lines
+
+        diff = "@@ -1,3 +1,3 @@\n ctx\n-old\n+new\n ctx2"
+        dl = parse_diff_lines(diff)
+        new_lines, new_map, old_lines, old_map = build_highlighted_sides(dl)
+        # New side: hunk(blank), ctx, +new, ctx2
+        assert "new" in new_lines
+        assert "old" not in new_lines
+        # Old side: hunk(blank), ctx, -old, ctx2
+        assert "old" in old_lines
+        assert "new" not in old_lines
+
+    def test_orphaned_triple_quote_balanced(self):
+        from sfctl.diff import build_highlighted_sides, parse_diff_lines
+
+        diff = '@@ -1,3 +1,3 @@\n ctx\n """\n-old\n+new'
+        dl = parse_diff_lines(diff)
+        new_lines, new_map, _, _ = build_highlighted_sides(dl)
+        tq_count = sum(line.count('"""') for line in new_lines)
+        assert tq_count % 2 == 0, "triple-quotes should be balanced"
+
+    def test_synthetic_lines_mapped_as_minus_one(self):
+        from sfctl.diff import build_highlighted_sides, parse_diff_lines
+
+        diff = '@@ -1,3 +1,3 @@\n """\n-old\n+new'
+        dl = parse_diff_lines(diff)
+        new_lines, new_map, _, _ = build_highlighted_sides(dl)
+        for i, m in enumerate(new_map):
+            if m == -1:
+                assert new_lines[i] == '"""'
+
+
 class TestBumpHeadings:
     def test_shift_up(self):
         from sfctl.formatting import bump_headings

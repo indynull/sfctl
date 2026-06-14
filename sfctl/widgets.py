@@ -16,7 +16,13 @@ from textual.widget import Widget
 from textual.widgets import Collapsible, Static, TextArea
 
 from sfctl.constants import ARROW_DOWN, ARROW_RIGHT, ARROW_UP
-from sfctl.diff import build_diff_line_map, language_from_filename, parse_diff_lines
+from sfctl.diff import (
+    DiffLine,
+    build_diff_line_map,
+    build_highlighted_sides,
+    language_from_filename,
+    parse_diff_lines,
+)
 from sfctl.formatting import sanitize
 
 
@@ -142,6 +148,56 @@ def _blend_bg(base: Color, tint: tuple[int, int, int]) -> Style:
     return Style(bgcolor=f"#{min(r+tr,255):02x}{min(g+tg,255):02x}{min(b+tb,255):02x}")
 
 
+def _apply_side_highlights(
+    parser: object,
+    query: object,
+    side_lines: list[str],
+    side_map: list[int],
+    diff_lines: list[DiffLine],
+    accept_kinds: set[str],
+    highlights: dict[int, list[tuple[int, int | None, str]]],
+) -> None:
+    """Parse *side_lines* with tree-sitter and map highlights back to unified indices.
+
+    Only lines whose diff kind is in *accept_kinds* are written into
+    *highlights*.  This lets us use new-side highlights for add/ctx lines
+    and old-side highlights for del lines without double-applying context.
+    """
+    from tree_sitter import QueryCursor  # type: ignore[import-untyped]
+
+    side_text = "\n".join(side_lines)
+    tree = parser.parse(side_text.encode())  # type: ignore[union-attr]
+    cursor = QueryCursor(query)
+    captures = cursor.captures(tree.root_node)
+
+    side_to_unified = {
+        side_idx: unified_idx
+        for side_idx, unified_idx in enumerate(side_map)
+        if unified_idx >= 0
+    }
+
+    for highlight_name, nodes in captures.items():
+        for node in nodes:
+            s_row, s_col = node.start_point
+            e_row, e_col = node.end_point
+
+            if s_row == e_row:
+                rows = [(s_row, s_col, e_col)]
+            else:
+                rows = [(s_row, s_col, None)]
+                for mid in range(s_row + 1, e_row):
+                    rows.append((mid, 0, None))
+                rows.append((e_row, 0, e_col))
+
+            for side_row, col_start, col_end in rows:
+                unified_idx = side_to_unified.get(side_row)
+                if unified_idx is None:
+                    continue
+                if diff_lines[unified_idx].kind not in accept_kinds:
+                    continue
+                highlights[unified_idx].append((col_start, col_end, highlight_name))
+
+
 class DiffDisplay(TextArea):
     """Read-only TextArea showing diffs with tree-sitter syntax highlighting
     and subtle background shading for added/deleted lines."""
@@ -183,6 +239,7 @@ class DiffDisplay(TextArea):
             clean_text, read_only=True,
             show_line_numbers=True, soft_wrap=False, **kwargs,
         )
+        self._lang_name = lang
         self._register_extra_language(lang)
         if lang:
             self.language = lang
@@ -203,6 +260,51 @@ class DiffDisplay(TextArea):
                 self.register_language(lang, Language(ts_lang), query)
         except (ImportError, OSError):
             pass
+
+    def _build_highlight_map(self) -> None:
+        """Build highlights by parsing old/new sides of the diff separately.
+
+        The default TextArea implementation parses the displayed text as a
+        single document, but that text is a unified diff with interleaved
+        additions and deletions — not valid source code.  Instead we split
+        the diff into old-side (ctx+del) and new-side (ctx+add), parse each
+        with tree-sitter, and map the resulting highlights back onto the
+        unified line indices.
+        """
+        self._line_cache.clear()
+        highlights = self._highlights
+        highlights.clear()
+
+        if not self._highlight_query or not self._lang_name:
+            return
+
+        try:
+            from tree_sitter import Parser
+        except ImportError:
+            return
+
+        # The tree-sitter Language lives on the SyntaxAwareDocument that
+        # TextArea already created.  The prepared highlight query is in
+        # self._highlight_query.
+        doc = self.document
+        ts_lang = getattr(doc, "language", None)
+        if ts_lang is None:
+            return
+
+        parser = Parser(ts_lang)
+
+        new_lines, new_map, old_lines, old_map = build_highlighted_sides(
+            self._diff_lines,
+        )
+
+        _apply_side_highlights(
+            parser, self._highlight_query, new_lines, new_map,
+            self._diff_lines, {"add", "ctx", "hunk"}, highlights,
+        )
+        _apply_side_highlights(
+            parser, self._highlight_query, old_lines, old_map,
+            self._diff_lines, {"del"}, highlights,
+        )
 
     _bg_cache: dict[str, Style] | None = None
     _bg_cache_key: tuple[int, int, int] | None = None
