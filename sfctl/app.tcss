@@ -38,6 +38,7 @@ DiffDisplay { height: auto; max-height: 50; }
 .trace-t7, .trace-t7 > CollapsibleTitle { color: #875f87; }
 .trace-t8, .trace-t8 > CollapsibleTitle { color: #00af87; }
 .trace-t9, .trace-t9 > CollapsibleTitle { color: #af8700; }
+.trace-block { margin: 0 0 0 2; padding: 0; color: $text-muted; }
 
 /* Info bar + content split */
 #info-bar     { height: 20fr; background: $surface; border-bottom: hkey $primary 40%; overflow-y: auto; }

@@ -407,7 +407,7 @@ class LazyCollapsible(Collapsible):
 
 
 def format_value(v: object, max_len: int = 120) -> str:
-    """Format a single value for display, truncating long strings."""
+    """Format a single value for inline display, truncating long strings."""
     if v is None:
         return "[dim italic]null[/]"
     if isinstance(v, bool):
@@ -446,10 +446,84 @@ def try_parse(v: object) -> object:
     return v
 
 
+_MAX_BLOCK_LINES = 20
+
+# Keys that are just wrapper metadata and duplicate the event name.
+_SKIP_INPUT_KEYS = frozenset({"variant"})
+_SKIP_OUTPUT_KEYS = frozenset({"type"})
+
+
+def _is_multiline(v: object) -> bool:
+    return isinstance(v, str) and "\n" in v
+
+
+def _decode_bytes(v: list[int]) -> str:
+    """Decode a list of byte values to a UTF-8 string."""
+    try:
+        return bytes(v).decode("utf-8", errors="replace")
+    except (TypeError, ValueError, OverflowError):
+        return str(v)
+
+
+def _format_block(text: str, indent: str = "      ") -> str:
+    """Truncate a multi-line string and indent it for display."""
+    lines = text.split("\n")
+    if len(lines) > _MAX_BLOCK_LINES:
+        lines = lines[:_MAX_BLOCK_LINES] + [f"... +{len(lines) - _MAX_BLOCK_LINES} lines"]
+    return "\n".join(f"{indent}{line}" for line in lines)
+
+
+def _unwrap_output(d: dict) -> object:
+    """Unwrap a single-payload output dict.
+
+    Proposal outputs often look like ``{"type": "ReadFile", "FileContent": {"content": "..."}}``.
+    Strip ``type`` and, if exactly one key remains whose value is a dict with a
+    single string value, return that string.  Otherwise return the dict as-is.
+    """
+    remaining = {k: v for k, v in d.items() if k not in _SKIP_OUTPUT_KEYS}
+    if len(remaining) == 1:
+        inner = next(iter(remaining.values()))
+        if isinstance(inner, dict) and len(inner) == 1:
+            sole = next(iter(inner.values()))
+            if isinstance(sole, str):
+                return sole
+        if isinstance(inner, str):
+            return inner
+    return remaining
+
+
+def _make_block_widget(text: str) -> Static:
+    """Create a Static widget that preserves newlines and brackets."""
+    block = _format_block(text)
+    return Static(block, markup=False, classes="trace-block")
+
+
+def _add_value_widgets(
+    widgets: list[Static],
+    key: str,
+    value: object,
+    key_style: str,
+    indent: str = "    ",
+) -> None:
+    """Append widget(s) for a single key/value pair.
+
+    Multi-line strings get a block display; everything else stays inline.
+    """
+    key_str = sanitize(str(key), 30)
+    if isinstance(value, list) and value and all(isinstance(x, int) for x in value):
+        value = _decode_bytes(value)
+    if _is_multiline(value):
+        widgets.append(Static(f"{indent}[{key_style}]{key_str}[/]:"))
+        widgets.append(_make_block_widget(value))
+    else:
+        widgets.append(Static(f"{indent}[{key_style}]{key_str}[/] = {format_value(value)}"))
+
+
 def trace_event_detail_widgets(ev: object) -> list[Static]:
-    """Build detail widgets for a trace event's args and response/output."""
+    """Build detail widgets for a trace event's input and output."""
     widgets: list[Static] = []
 
+    # ---- Input ----
     if hasattr(ev, "input"):
         raw_input = ev.input
     elif isinstance(ev, dict):
@@ -459,17 +533,23 @@ def trace_event_detail_widgets(ev: object) -> list[Static]:
     if raw_input:
         args = try_parse(raw_input)
         if isinstance(args, dict) and args:
-            widgets.append(Static("  [bold]args:[/]"))
-            for k, v in args.items():
-                key_str = sanitize(str(k), 30)
-                widgets.append(Static(f"    [bold cyan]{key_str}[/] = {format_value(v)}"))
+            filtered = {k: v for k, v in args.items() if k not in _SKIP_INPUT_KEYS and v is not None}
+            if filtered:
+                widgets.append(Static("  [bold]args:[/]"))
+                for k, v in filtered.items():
+                    _add_value_widgets(widgets, k, v, "bold cyan")
         elif isinstance(args, list) and args:
             widgets.append(Static(f"  [bold]args:[/] {format_value(args)}"))
         else:
-            line = sanitize(str(args))
-            if line:
-                widgets.append(Static(f"  [bold]args:[/] [dim]{line}[/]"))
+            text = str(args)
+            if text.strip():
+                if _is_multiline(text):
+                    widgets.append(Static("  [bold]args:[/]"))
+                    widgets.append(_make_block_widget(text))
+                else:
+                    widgets.append(Static(f"  [bold]args:[/] [dim]{sanitize(text)}[/]"))
 
+    # ---- Output ----
     if hasattr(ev, "output"):
         raw_output = ev.output
     elif isinstance(ev, dict):
@@ -479,15 +559,24 @@ def trace_event_detail_widgets(ev: object) -> list[Static]:
     if raw_output:
         response = try_parse(raw_output)
         if isinstance(response, dict) and response:
+            response = _unwrap_output(response)
+        if isinstance(response, str):
+            text = response.strip()
+            if text:
+                if _is_multiline(text):
+                    widgets.append(Static(f"  [bold]{ARROW_RIGHT} output:[/]"))
+                    widgets.append(_make_block_widget(text))
+                else:
+                    widgets.append(Static(f"  [bold]{ARROW_RIGHT}[/] [dim]{sanitize(text, 300)}[/]"))
+        elif isinstance(response, dict) and response:
             widgets.append(Static(f"  [bold]{ARROW_RIGHT} output:[/]"))
             for k, v in response.items():
-                key_str = sanitize(str(k), 30)
-                widgets.append(Static(f"    [bold green]{key_str}[/] = {format_value(v)}"))
+                if k in _SKIP_OUTPUT_KEYS:
+                    continue
+                if isinstance(v, list) and v and all(isinstance(x, int) for x in v):
+                    v = _decode_bytes(v)
+                _add_value_widgets(widgets, k, v, "bold green")
         elif isinstance(response, list) and response:
             widgets.append(Static(f"  [bold]{ARROW_RIGHT}[/] {format_value(response)}"))
-        else:
-            line = sanitize(str(response), 300)
-            if line:
-                widgets.append(Static(f"  [bold]{ARROW_RIGHT}[/] [dim]{line}[/]"))
 
     return widgets

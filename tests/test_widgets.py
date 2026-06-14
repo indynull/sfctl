@@ -200,6 +200,55 @@ class TestTraceEventDetailWidgets:
 
         assert trace_event_detail_widgets({"output": ""}) == []
 
+    def test_variant_key_skipped(self):
+        from sfctl.widgets import trace_event_detail_widgets
+
+        ev = {"input": {"variant": "ReadFile", "target_file": "a.py"}}
+        widgets = trace_event_detail_widgets(ev)
+        texts = [str(w._Static__content) for w in widgets]
+        combined = "\n".join(texts)
+        assert "target_file" in combined
+        assert "variant" not in combined.lower().split("target_file")[0]
+
+    def test_none_values_skipped(self):
+        from sfctl.widgets import trace_event_detail_widgets
+
+        ev = {"input": {"pattern": "foo", "glob": None, "type": None}}
+        widgets = trace_event_detail_widgets(ev)
+        texts = [str(w._Static__content) for w in widgets]
+        combined = "\n".join(texts)
+        assert "pattern" in combined
+        assert "null" not in combined
+
+    def test_multiline_output_preserved(self):
+        from sfctl.widgets import trace_event_detail_widgets
+        from sfctl.models import TraceEvent
+
+        ev = TraceEvent(name="run", output="line1\nline2\nline3")
+        widgets = trace_event_detail_widgets(ev)
+        texts = [str(w._Static__content) for w in widgets]
+        combined = "\n".join(texts)
+        assert "line1" in combined
+        assert "line2" in combined
+
+    def test_byte_list_decoded(self):
+        from sfctl.widgets import trace_event_detail_widgets
+
+        ev = {"output": {"type": "Grep", "stdout": list(b"hello world"), "stderr": []}}
+        widgets = trace_event_detail_widgets(ev)
+        texts = [str(w._Static__content) for w in widgets]
+        combined = "\n".join(texts)
+        assert "hello world" in combined
+
+    def test_nested_output_unwrapped(self):
+        from sfctl.widgets import trace_event_detail_widgets
+
+        ev = {"output": {"type": "ReadFile", "FileContent": {"content": "file data"}}}
+        widgets = trace_event_detail_widgets(ev)
+        texts = [str(w._Static__content) for w in widgets]
+        combined = "\n".join(texts)
+        assert "file data" in combined
+
 
 class TestLazyCollapsible:
     def test_for_diff(self):
