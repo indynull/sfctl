@@ -4,7 +4,7 @@ from rich.markdown import Markdown as RichMarkdown
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual.containers import ScrollableContainer, Vertical
 from textual.reactive import reactive
 from textual.widgets import (
     Button,
@@ -24,7 +24,8 @@ from sfctl import ids, ranking
 from sfctl.commands import NavigationProvider
 from sfctl.config import get_web_url, load_config, update_config
 from sfctl.constants import ARROW_DOWN, ARROW_UP, EM_DASH
-from sfctl.diff import diff_line_ref, language_from_filename, parse_content, strip_diff_preamble
+from sfctl.diff import parse_content, strip_diff_preamble
+from sfctl.editor import EditorController
 from sfctl.formatting import (
     bump_headings,
     clean_event_name,
@@ -54,24 +55,15 @@ from sfctl.ids import (
     tab_entry_id,
     tab_response_id,
     tab_trace_id,
-    vote_down_id,
-    vote_label_id,
-    vote_up_id,
 )
-from sfctl.models import Annotation, ModelData, ModelScores, ParsedContent, ProposalData
+from sfctl.models import ModelData, ModelScores, ParsedContent, ProposalData
 from sfctl.proposal import has_proposal_changes, parse_proposal, proposal_all_changes
 from sfctl.scoring import ReviewState
-from sfctl.screens import (
-    CommentsModal,
-    DiffSearchModal,
-    DiffSearchResult,
-    EventSearchModal,
-    HelpModal,
-    ReviewCommentModal,
-    YankCommentModal,
-    build_clipboard_text,
-)
+from sfctl.screens import HelpModal
+from sfctl.search import SearchController
+from sfctl.session import SessionHistory, TaskSession
 from sfctl.task_types import TaskType, detect_task_type
+from sfctl.voting import VotingController
 from sfctl.widgets import DiffDisplay, LazyCollapsible, SplitHandle, trace_event_detail_widgets
 
 
@@ -89,9 +81,9 @@ class StarfleetApp(App):
         if not hasattr(self, "_overview_populated") or not self.is_running:
             return
         self._update_scoreboard()
-        self._refresh_overview_annotations()
+        self._editor.refresh_overview_annotations()
         for idx in range(len(new_scores)):
-            self._refresh_vote_labels(idx)
+            self._voting.refresh_vote_labels(idx)
 
     BINDINGS = [
         Binding("0", "go_to('overview')", "Overview", show=True),
@@ -146,6 +138,9 @@ class StarfleetApp(App):
         self._populated_models: set[int] = set()
         self._overview_populated = False
         self._trace_type_map: dict[str, int] = {}
+        self._voting = VotingController(self)
+        self._search = SearchController(self)
+        self._editor = EditorController(self)
 
         task = data.get("task", {})
         email = (task.get("actionHistory") or [{}])[0].get("userId", "")
@@ -318,41 +313,8 @@ class StarfleetApp(App):
             bh_c = pane.query_one(".bash-history", Collapsible)
             await bh_c.query_one(Collapsible.Contents).mount(Static(bh_lines))
 
-    def _vote_bar(self, idx: int, context: str) -> Horizontal:
-        """Small inline up/down vote buttons for a model tab."""
-        s = self.scores[idx]
-        score = getattr(s, context, 0)
-        sign = f"+{score}" if score > 0 else str(score)
-        return Horizontal(
-            Button(f"{ARROW_UP}", id=vote_up_id(idx, context), classes="vote-btn"),
-            Static(sign, classes="vote-score", id=vote_label_id(idx, context)),
-            Button(f"{ARROW_DOWN}", id=vote_down_id(idx, context), classes="vote-btn"),
-            classes="vote-bar",
-        )
-
-    def _refresh_vote_labels(self, idx: int) -> None:
-        if idx >= len(self.scores):
-            return
-        s = self.scores[idx]
-        for context in Context:
-            label = self.query_one_optional(f"#{vote_label_id(idx, context)}", Static)
-            if label:
-                score = getattr(s, context, 0)
-                sign = f"+{score}" if score > 0 else str(score)
-                label.update(sign)
-
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        btn_id = event.button.id or ""
-        if not btn_id.startswith("vote-"):
-            return
-        parts = btn_id.split("-")
-        if len(parts) < 4:
-            return
-        direction = parts[1]
-        idx = int(parts[2])
-        context = "-".join(parts[3:])
-        delta = 1 if direction == "up" else -1
-        self._apply_vote(idx, context, delta)
+        self._voting.handle_button(event.button.id or "")
 
     async def _populate_model(self, idx: int) -> None:
         """Lazily compose a model view's content on first switch."""
@@ -374,7 +336,7 @@ class StarfleetApp(App):
         await tabs.add_pane(response_pane)
         summary = self._model_summary_text(m)
         await response_pane.mount_all([
-            self._vote_bar(idx, "response"),
+            self._voting.vote_bar(idx, "response"),
             Static(RichMarkdown(summary)),
         ])
 
@@ -384,7 +346,7 @@ class StarfleetApp(App):
 
         diffs_pane = TabPane(f"Diffs ({len(m.file_diffs)})", id=tab_diffs_id(mid))
         await tabs.add_pane(diffs_pane)
-        diffs_widgets: list = [self._vote_bar(idx, "code")]
+        diffs_widgets: list = [self._voting.vote_bar(idx, "code")]
         if m.file_diffs:
             diffs_widgets.extend(
                 LazyCollapsible.for_diff(fd.filename, fd.diff, letter, classes="inner")
@@ -608,6 +570,7 @@ class StarfleetApp(App):
             tab_idx += 1
 
     async def on_mount(self) -> None:
+        self._record_session()
         if self.task_type == TaskType.UNKNOWN:
             self.notify(f"Loaded task {self.task_id} (unsupported type)")
             self._maybe_show_tutorial()
@@ -625,6 +588,15 @@ class StarfleetApp(App):
         self._update_scoreboard()
         self._maybe_show_tutorial()
 
+    def _record_session(self) -> None:
+        """Record this task visit in local session history."""
+        session = TaskSession(
+            task_id=self.task_id,
+            task_type=self.task_type.value,
+            repository=self.parsed.repository or "",
+        )
+        SessionHistory().record(session)
+
     async def on_collapsible_expanded(self, event: Collapsible.Expanded) -> None:
         c = event.collapsible
         if not isinstance(c, LazyCollapsible):
@@ -636,7 +608,7 @@ class StarfleetApp(App):
             diff_text = lazy.diff
             lazy.diff = None  # consume
             await self._mount_into(c, DiffDisplay(diff_text, lazy.letter, lazy.filename))
-            self._flush_pending_grep()
+            self._search.flush_pending_grep()
             return
 
         # Lazy trace event loading
@@ -660,21 +632,13 @@ class StarfleetApp(App):
                 if detail:
                     await self._mount_into(inner_c, *detail)
 
-    def _save_summary_from_editor(self) -> None:
-        """Save summary from the inline editor if it exists."""
-        try:
-            editor = self.query_one(f"#{ids.JUST_EDITOR}", TextArea)
-            self._save_summary(editor.text)
-        except Exception:
-            pass
-
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         if (
             self._overview_populated
             and event.tabbed_content.id == ids.TABS_OVERVIEW
             and str(event.pane.id) != ids.TAB_CURRENT
         ):
-            self._show_justification_preview()
+            self._editor.show_justification_preview()
 
     @property
     def _current_section(self) -> str | None:
@@ -742,42 +706,7 @@ class StarfleetApp(App):
     async def go_to_diff(
         self, model_index: int, filename: str, grep_line: str | None = None,
     ) -> None:
-        is_proposal = self.task_type == TaskType.PROJECT_PROPOSAL
-        if not is_proposal and model_index >= len(self.models):
-            return
-        mid = model_id(model_index)
-        await self.go_to(mid)
-        tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-        tabs.active = tab_diffs_id(mid)
-        diffs_pane = tabs.get_pane(tab_diffs_id(mid))
-        container = self.query_one(f"#{mid}", ScrollableContainer)
-        for collapsible in diffs_pane.query(Collapsible):
-            if str(collapsible.title) == filename:
-                already_open = not collapsible.collapsed
-                self._pending_grep = (collapsible, container, grep_line)
-                collapsible.collapsed = False
-                if already_open:
-                    self._flush_pending_grep()
-                break
-
-    def _flush_pending_grep(self) -> None:
-        """Execute a pending grep scroll when the DiffDisplay is already mounted."""
-        pending = getattr(self, "_pending_grep", None)
-        if not pending:
-            return
-        collapsible, container, grep_line = pending
-        self._pending_grep = None
-        for diff_display in collapsible.query(DiffDisplay):
-            if grep_line:
-                lines = diff_display.diff_text.splitlines()
-                for line_idx, line in enumerate(lines):
-                    if grep_line.strip() in line.strip():
-                        diff_display.scroll_to(0, line_idx, animate=False)
-                        diff_display.move_cursor((line_idx, 0))
-                        break
-            container.scroll_to_widget(diff_display, top=True, animate=False)
-            return
-        container.scroll_to_widget(collapsible, top=True, animate=False)
+        await self._search.go_to_diff(model_index, filename, grep_line)
 
     async def action_go_to(self, section_id: str) -> None:
         await self.go_to(section_id)
@@ -848,181 +777,46 @@ class StarfleetApp(App):
         return self.models[idx] if 0 <= idx < len(self.models) else None
 
     def action_search_diffs(self) -> None:
-        if self.task_type == TaskType.PROJECT_PROPOSAL:
-            self._search_proposal_diffs()
-            return
-        m = self._current_model()
-        if not m:
-            self.notify("Navigate to a model first.", severity="warning")
-            return
-        if not m.file_diffs:
-            self.notify("No diffs in this model.", severity="warning")
-            return
-
-        async def _on_result(result: DiffSearchResult | None) -> None:
-            if result:
-                await self.go_to_diff(result.model_index, result.filename, result.grep_line)
-
-        self.push_screen(DiffSearchModal(self.current_model_index, m.file_diffs), _on_result)
-
-    def _search_proposal_diffs(self) -> None:
-        if not self.proposal or not self.proposal.file_diffs:
-            self.notify("No diffs in this proposal.", severity="warning")
-            return
-
-        async def _on_result(result: DiffSearchResult | None) -> None:
-            if result:
-                await self.go_to_diff(result.model_index, result.filename, result.grep_line)
-
-        self.push_screen(DiffSearchModal(0, self.proposal.file_diffs), _on_result)
+        self._search.search_diffs()
 
     def action_search_events(self) -> None:
-        if self.task_type == TaskType.PROJECT_PROPOSAL:
-            events = self.proposal.tool_events if self.proposal else []
-        else:
-            m = self._current_model()
-            events = m.tool_events if m else []
-        dict_events = list(events)
-        if not dict_events:
-            self.notify("No trace events.", severity="warning")
-            return
-
-        async def _on_result(event_index: int | None) -> None:
-            if event_index is None:
-                return
-            await self._expand_trace_event(event_index, dict_events)
-
-        self.push_screen(EventSearchModal(dict_events), _on_result)
-
-    async def _expand_trace_event(self, event_index: int, events: list[dict]) -> None:
-        if self.task_type == TaskType.PROJECT_PROPOSAL:
-            mid = model_id(0)
-        else:
-            m = self._current_model()
-            if not m:
-                return
-            mid = model_id(self.current_model_index)
-        await self.go_to(mid)
-        tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-        tabs.active = tab_trace_id(mid)
-        target_pane = tabs.get_pane(tab_trace_id(mid))
-        container = self.query_one(f"#{mid}", ScrollableContainer)
-
-        trace_collapsibles = [
-            c for c in target_pane.query(Collapsible)
-            if "trace-event-c" in (c.classes or set())
-        ]
-        if not trace_collapsibles:
-            for c in target_pane.query(LazyCollapsible):
-                if c.lazy.events and not c.lazy.populated:
-                    c.collapsed = False
-                    await self.workers.wait_for_complete()
-                    trace_collapsibles = [
-                        cc for cc in target_pane.query(Collapsible)
-                        if "trace-event-c" in (cc.classes or set())
-                    ]
-                    break
-
-        if 0 <= event_index < len(trace_collapsibles):
-            target = trace_collapsibles[event_index]
-            target.collapsed = False
-            self.call_later(
-                lambda: container.scroll_to_widget(target, top=True, animate=False)
-            )
-
-
+        self._search.search_events()
 
     def action_yank_file(self) -> None:
-        focused = self.focused
-        if not isinstance(focused, DiffDisplay):
-            self.notify("Focus a diff first (click or tab into it).", severity="warning")
-            return
-        has_selection = focused.selected_text.strip() != ""
-        if has_selection:
-            sel = focused.selection
-            start_idx = min(sel.start[0], sel.end[0])
-            end_idx = max(sel.start[0], sel.end[0])
-            snippet = focused.original_lines(start_idx, end_idx)
-            line_ref = diff_line_ref(focused.diff_text, start_idx, end_idx)
-        else:
-            snippet = focused.diff_text
-            line_ref = diff_line_ref(focused.diff_text, 0, len(focused.diff_text.splitlines()) - 1)
-        if not snippet.strip():
-            self.notify("No diff content to yank.", severity="warning")
-            return
-        filename = focused.filename
-
-        def _on_result(result: tuple[int, str] | None) -> None:
-            if result:
-                _, block = result
-                if self.review.summary:
-                    if not self.review.summary.endswith("\n"):
-                        self.review.summary += "\n"
-                    if not self.review.summary.endswith("\n\n"):
-                        self.review.summary += "\n"
-                self.review.summary += block
-                self._save_summary(self.review.summary)
-                self._refresh_overview_annotations()
-                self.notify(f"Yanked snippet from {filename}")
-
-        self.push_screen(
-            YankCommentModal(
-                self.current_model_index,
-                focused.model_name,
-                filename,
-                snippet,
-                line_ref,
-            ),
-            _on_result,
-        )
+        self._editor.yank_file()
 
     def on_diff_display_vote_requested(self, event: DiffDisplay.VoteRequested) -> None:
         idx = self.current_model_index
         if idx < 0 or idx >= len(self.models):
             return
-        self._apply_vote(idx, Context.CODE, event.delta)
+        self._voting.apply_vote(idx, Context.CODE, event.delta)
 
     def on_diff_display_yank_requested(self, event: DiffDisplay.YankRequested) -> None:
-        self.action_yank_file()
+        self._editor.yank_file()
+
+    def add_annotation(self, model_index: int, annotation: object) -> None:
+        """Public API for adding annotations — delegates to VotingController."""
+        self._voting.add_annotation(model_index, annotation)
 
     def _detect_vote_context(self) -> str:
-        mid = model_id(self.current_model_index)
-        try:
-            tabs = self.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-            active = tabs.active
-            if active == tab_response_id(mid):
-                return Context.RESPONSE
-            if active in (tab_trace_id(mid), tab_diffs_id(mid)):
-                return Context.CODE
-        except Exception:
-            pass
-        return Context.OVERALL
+        return self._voting.detect_vote_context()
 
-    def _apply_vote(self, idx: int, context: str, delta: int) -> None:
-        annotation = Annotation(context=context, sentiment=delta)
-        self.add_annotation(idx, annotation)
-        score = getattr(self.scores[idx], context)
-        sign = f"+{score}" if score > 0 else str(score)
-        arrow = ARROW_UP if delta > 0 else ARROW_DOWN
-        color = "green" if delta > 0 else "red"
-        self.notify(f"[{color}]{arrow}[/] {model_letter(idx)} {context}: {sign}")
+    def _save_summary(self, text: str) -> None:
+        self._editor.save_summary(text)
 
-    def _vote(self, delta: int) -> None:
-        idx = self.current_model_index
-        if not self._is_on_model_view() or idx >= len(self.models):
-            return
-        self._apply_vote(idx, context=self._detect_vote_context(), delta=delta)
+    def _refresh_overview_annotations(self) -> None:
+        self._editor.refresh_overview_annotations()
 
     def action_vote_up(self) -> None:
-        self._vote(1)
+        self._voting.vote(1)
 
     def action_vote_down(self) -> None:
-        self._vote(-1)
+        self._voting.vote(-1)
 
     def action_reset_local(self) -> None:
         self.review.reset(len(self.models), self._get_history())
         self.scores = self.review.scores
-        self._refresh_overview_annotations()
+        self._editor.refresh_overview_annotations()
         self.notify("Reset to server state.")
 
     def rankings_summary(self) -> str:
@@ -1071,114 +865,22 @@ class StarfleetApp(App):
     def _model_summary_text(m: ModelData) -> str:
         return ranking.model_summary_text(m)
 
-    def add_annotation(self, model_index: int, annotation: Annotation) -> None:
-        """Append an annotation for a model, persist, and refresh UI."""
-        self.review.add_annotation(model_index, annotation)
-        self.scores = self.review.scores
-
-    def _save_summary(self, text: str) -> None:
-        """Update the summary text and persist."""
-        self.review.set_summary(text)
-
-    def _save_comments(self, text: str) -> None:
-        """Update review comments and persist."""
-        self.review.set_comments(text)
-
-    def _refresh_overview_annotations(self) -> None:
-        """Refresh the overview summary and rankings."""
-        if not self._overview_populated:
-            return
-        try:
-            rankings = self.query_one(f"#{ids.JUST_RANKINGS}", Static)
-            rankings.update(self.rankings_summary())
-            preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
-            preview.update(self.review.summary or self._EMPTY_SUMMARY)
-        except Exception:
-            pass
-
     async def action_edit_justification(self) -> None:
-        """Navigate to overview/current tab and activate the editor."""
-        await self.go_to("overview")
-        try:
-            tabs = self.query_one(f"#{ids.TABS_OVERVIEW}", TabbedContent)
-            tabs.active = ids.TAB_CURRENT
-        except Exception:
-            pass
-        self._show_justification_editor()
-
-    def _show_justification_editor(self) -> None:
-        try:
-            editor = self.query_one(f"#{ids.JUST_EDITOR}", TextArea)
-            preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
-        except Exception:
-            return
-        editor.text = self.review.summary
-        preview.display = False
-        editor.display = True
-        editor.focus()
-
-    def _show_justification_preview(self) -> None:
-        try:
-            editor = self.query_one(f"#{ids.JUST_EDITOR}", TextArea)
-            preview = self.query_one(f"#{ids.JUST_PREVIEW}", Markdown)
-        except Exception:
-            return
-        if editor.display:
-            self._save_summary(editor.text)
-            editor.display = False
-            preview.update(self.review.summary or self._EMPTY_SUMMARY)
-            preview.display = True
+        await self._editor.edit_justification()
 
     def action_add_comment(self) -> None:
-        snippet = ""
-        context = ""
-        lang = ""
-        focused = self.focused
-        if isinstance(focused, DiffDisplay):
-            sel_text = focused.selected_text.strip()
-            if sel_text:
-                snippet = sel_text
-            context = f"{focused.model_name} {focused.filename}"
-            lang = language_from_filename(focused.filename) or "diff"
-        elif isinstance(focused, TextArea) and focused.selected_text.strip():
-            snippet = focused.selected_text.strip()
-
-        def _on_result(result: str | None) -> None:
-            if result:
-                if self.review.comments:
-                    if not self.review.comments.endswith("\n"):
-                        self.review.comments += "\n"
-                    if not self.review.comments.endswith("\n\n"):
-                        self.review.comments += "\n"
-                self.review.comments += result
-                self._save_comments(self.review.comments)
-                self.notify("Comment added.")
-
-        self.push_screen(ReviewCommentModal(snippet, context, lang), _on_result)
+        self._editor.add_comment()
 
     def action_edit_comments(self) -> None:
-        def _on_result(text: str) -> None:
-            self._save_comments(text)
-
-        self.push_screen(CommentsModal(self.review.comments), _on_result)
+        self._editor.edit_comments()
 
     def action_copy_comments(self) -> None:
-        if not self.review.comments.strip():
-            self.notify("No comments to copy.", severity="warning")
-            return
-        self.copy_to_clipboard(self.review.comments)
-        self.notify("Comments copied to clipboard.")
+        self._editor.copy_comments()
 
     def on_key(self, event) -> None:
         """Handle escape from justification editor to switch back to preview."""
-        if (
-            event.key == "escape"
-            and isinstance(self.focused, TextArea)
-            and getattr(self.focused, "id", None) == ids.JUST_EDITOR
-        ):
-            event.prevent_default()
-            event.stop()
-            self._show_justification_preview()
+        if event.key == "escape":
+            self._editor.handle_escape_from_editor(event)
 
     _HELP_TEXT = (
         "[bold]Navigation[/bold]\n"
@@ -1274,17 +976,8 @@ class StarfleetApp(App):
         self.notify("Data refreshed.")
 
     def action_copy_summary(self) -> None:
-        text = build_clipboard_text(
-            self.task_id,
-            self.rankings_summary(),
-            self.review.summary,
-        )
-        if not text.strip():
-            self.notify("Nothing to copy.", severity="warning")
-            return
-        self.copy_to_clipboard(text)
-        self.notify("Rankings & justification copied to clipboard.")
+        self._editor.copy_summary()
 
     async def action_quit(self) -> None:
-        self._save_summary_from_editor()
+        self._editor.save_summary_from_editor()
         self.exit()
