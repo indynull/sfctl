@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import re
-
-from sfctl.diff import extract_file_diffs, parse_json_field
+from sfctl.diff import extract_file_diffs, parse_json_field, parse_messages_trace
 from sfctl.formatting import sanitize
 from sfctl.models import ProposalData, TraceEvent
 
@@ -35,115 +32,28 @@ def extract_rubrics(rubrics_field: dict | None) -> list[str]:
     return result
 
 
-def _variant_to_snake(variant: str) -> str:
-    """Convert a PascalCase or Title Case string to ``snake_case``."""
-    result = re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", variant).lower()
-    return re.sub(r"\s+", "_", result)
-
-
-def tool_name_from_input(raw_input: str | dict) -> str:
-    """Extract a groupable tool name from a tool_call's rawInput.
-
-    The ``variant`` field (e.g. ``Grep``, ``ReadFile``, ``Bash``) is
-    converted to snake_case to match code-review event naming.
-    Falls back to the title if rawInput has no variant.
-    """
-    if isinstance(raw_input, str):
-        try:
-            raw_input = json.loads(raw_input)
-        except (json.JSONDecodeError, ValueError):
-            return ""
-    if isinstance(raw_input, dict):
-        variant = raw_input.get("variant", "")
-        if variant:
-            return _variant_to_snake(variant)
-    return ""
-
-
 def _parse_proposal_trace(
     trace: dict | None,
 ) -> tuple[str, list[TraceEvent], list[dict], int | None]:
     """Parse a proposal trace into (summary, tool_events, messages, elapsed_ms).
 
-    The real format is ``{"trace": [list of items]}`` where each item has a
-    ``role`` field (``user``, ``assistant``, ``assistant_thinking``, ``tool_call``).
-    Tool-call items are normalized to match the code-review event shape so
-    the existing rendering pipeline works unchanged.
+    Accepts both the messages-list format (``{"trace": [list of items]}``)
+    and the legacy pre-extracted format (``{"trace": "summary", "toolEvents": ...}``),
+    delegating to the shared ``parse_messages_trace`` parser.
     """
     if not trace:
         return "", [], [], None
 
     items = trace.get("trace")
     if isinstance(items, str):
-        from sfctl.diff import dicts_to_trace_events
-
-        return (
-            items,
-            dicts_to_trace_events(parse_json_field(trace.get("toolEvents"))),
-            parse_json_field(trace.get("messages")),
-            None,
-        )
-    if not isinstance(items, list):
-        return "", [], [], None
-
-    tool_events: list[TraceEvent] = []
-    messages: list[dict] = []
-    summary = ""
-    pending_ev: TraceEvent | None = None
-    first_ts: int | None = None
-    last_ts: int | None = None
-
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        ts = item.get("timestamp")
-        if ts:
-            if first_ts is None:
-                first_ts = ts
-            last_ts = ts
-        if pending_ev and ts and pending_ev.timestamp and ts > pending_ev.timestamp:
-            pending_ev.wall_time = ts - pending_ev.timestamp
-            pending_ev = None
-        role = item.get("role", "")
-        if role == "tool_call":
-            title = item.get("title", "")
-            raw_input = item.get("rawInput", "")
-            ev = TraceEvent(
-                name=tool_name_from_input(raw_input) or _variant_to_snake(title),
-                title=title,
-                input=raw_input,
-                output=item.get("rawOutput", ""),
-                wall_time=None,
-                exit_code="no_error" if item.get("status") == "completed" else item.get("status", ""),
-                timestamp=ts,
-            )
-            tool_events.append(ev)
-            pending_ev = ev
-        elif role == "assistant_thinking":
-            content = item.get("content", "")
-            if isinstance(content, str) and content:
-                ev = TraceEvent(
-                    name="thinking",
-                    output=content,
-                    wall_time=None,
-                    exit_code="no_error",
-                    timestamp=ts,
-                )
-                tool_events.append(ev)
-                pending_ev = ev
-        elif role in ("assistant", "user"):
-            content = item.get("content", "")
-            if isinstance(content, list):
-                content = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
-            messages.append({"role": role, "content": content})
-
-    for msg in reversed(messages):
-        if msg["role"] == "assistant" and len(msg.get("content", "")) > 200:
-            summary = msg["content"]
-            break
-
-    elapsed_ms = (last_ts - first_ts) if first_ts and last_ts and last_ts > first_ts else None
-    return summary, tool_events, messages, elapsed_ms
+        raw_messages = parse_json_field(trace.get("messages"))
+        if raw_messages and any(m.get("role") == "tool_call" for m in raw_messages if isinstance(m, dict)):
+            summary, tool_events, messages, elapsed_ms = parse_messages_trace(raw_messages)
+            return items or summary, tool_events, messages, elapsed_ms
+        return items, [], raw_messages, None
+    if isinstance(items, list):
+        return parse_messages_trace(items)
+    return "", [], [], None
 
 
 def parse_proposal(history: list[dict], trace: dict | None = None) -> ProposalData:

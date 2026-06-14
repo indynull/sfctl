@@ -249,6 +249,31 @@ class TestTraceEventDetailWidgets:
         combined = "\n".join(texts)
         assert "file data" in combined
 
+    def test_output_for_prompt_preferred(self):
+        from sfctl.widgets import trace_event_detail_widgets
+
+        ev = {"output": {
+            "type": "Bash", "output": list(b"/usr/bin/ndisasm\n"),
+            "output_for_prompt": "exit: 0\n/usr/bin/ndisasm\n",
+            "exit_code": 0, "command": "which ndisasm",
+        }}
+        widgets = trace_event_detail_widgets(ev)
+        texts = [str(w._Static__content) for w in widgets]
+        combined = "\n".join(texts)
+        assert "exit: 0" in combined
+        assert "output_for_prompt" not in combined
+
+    def test_false_booleans_skipped_in_input(self):
+        from sfctl.widgets import trace_event_detail_widgets
+
+        ev = {"input": {"command": "ls", "is_background": False, "variant": "Bash"}}
+        widgets = trace_event_detail_widgets(ev)
+        texts = [str(w._Static__content) for w in widgets]
+        combined = "\n".join(texts)
+        assert "command" in combined
+        assert "is_background" not in combined
+        assert "variant" not in combined.lower().split("command")[0]
+
 
 class TestLazyCollapsible:
     def test_for_diff(self):

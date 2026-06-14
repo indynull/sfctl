@@ -282,21 +282,97 @@ def parse_json_field(v: str | None) -> list:
         return []
 
 
-def dicts_to_trace_events(raw: list) -> list[TraceEvent]:
-    """Convert a list of raw dicts into TraceEvent objects."""
-    events: list[TraceEvent] = []
-    for item in raw:
-        if isinstance(item, dict):
-            events.append(TraceEvent(
-                name=str(item.get("name", "")),
-                title=str(item.get("title", "")),
-                wall_time=item.get("wall_time"),
-                exit_code=str(item.get("exit_code", "no_error")),
-                timestamp=item.get("timestamp"),
-                input=item.get("input", item.get("args", item.get("arguments", ""))),
-                output=item.get("output", item.get("result", item.get("response", ""))),
-            ))
-    return events
+def _variant_to_snake(variant: str) -> str:
+    """Convert a PascalCase or Title Case string to ``snake_case``."""
+    result = re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", variant).lower()
+    return re.sub(r"\s+", "_", result)
+
+
+def tool_name_from_input(raw_input: str | dict) -> str:
+    """Extract a groupable tool name from a tool_call's rawInput.
+
+    The ``variant`` field (e.g. ``Grep``, ``ReadFile``, ``Bash``) is
+    converted to snake_case to match code-review event naming.
+    """
+    if isinstance(raw_input, str):
+        try:
+            raw_input = json.loads(raw_input)
+        except (json.JSONDecodeError, ValueError):
+            return ""
+    if isinstance(raw_input, dict):
+        variant = raw_input.get("variant", "")
+        if variant:
+            return _variant_to_snake(variant)
+    return ""
+
+
+def parse_messages_trace(
+    items: list[dict],
+) -> tuple[str, list[TraceEvent], list[dict], int | None]:
+    """Parse a messages-format trace into (summary, tool_events, messages, elapsed_ms).
+
+    Both model-ranking and project-proposal traces share this format:
+    a list of dicts with ``role`` in (``user``, ``assistant``,
+    ``assistant_thinking``, ``tool_call``).
+    """
+    tool_events: list[TraceEvent] = []
+    messages: list[dict] = []
+    summary = ""
+    pending_ev: TraceEvent | None = None
+    first_ts: int | None = None
+    last_ts: int | None = None
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        ts = item.get("timestamp")
+        if ts:
+            if first_ts is None:
+                first_ts = ts
+            last_ts = ts
+        if pending_ev and ts and pending_ev.timestamp and ts > pending_ev.timestamp:
+            pending_ev.wall_time = ts - pending_ev.timestamp
+            pending_ev = None
+        role = item.get("role", "")
+        if role == "tool_call":
+            title = item.get("title", "")
+            raw_input = item.get("rawInput", "")
+            ev = TraceEvent(
+                name=tool_name_from_input(raw_input) or _variant_to_snake(title),
+                title=title,
+                input=raw_input,
+                output=item.get("rawOutput", ""),
+                wall_time=None,
+                exit_code="no_error" if item.get("status") == "completed" else item.get("status", ""),
+                timestamp=ts,
+            )
+            tool_events.append(ev)
+            pending_ev = ev
+        elif role == "assistant_thinking":
+            content = item.get("content", "")
+            if isinstance(content, str) and content:
+                ev = TraceEvent(
+                    name="thinking",
+                    output=content,
+                    wall_time=None,
+                    exit_code="no_error",
+                    timestamp=ts,
+                )
+                tool_events.append(ev)
+                pending_ev = ev
+        elif role in ("assistant", "user"):
+            content = item.get("content", "")
+            if isinstance(content, list):
+                content = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
+            messages.append({"role": role, "content": content})
+
+    for msg in reversed(messages):
+        if msg["role"] == "assistant" and len(msg.get("content", "")) > 200:
+            summary = msg["content"]
+            break
+
+    elapsed_ms = (last_ts - first_ts) if first_ts and last_ts and last_ts > first_ts else None
+    return summary, tool_events, messages, elapsed_ms
 
 
 def parse_content(blob: dict) -> ParsedContent:
@@ -315,13 +391,15 @@ def parse_content(blob: dict) -> ParsedContent:
     for m in model_items:
         trace = m["trace"]
         diff_text = m["diff"]["codeDiff"]
+        raw_messages = parse_json_field(trace.get("messages"))
+        summary, tool_events, messages, _ = parse_messages_trace(raw_messages)
         models.append(
             ModelData(
                 name=m.get("title", "Unknown"),
                 diff=diff_text,
-                trace_summary=trace.get("trace"),
-                messages=parse_json_field(trace.get("messages")),
-                tool_events=dicts_to_trace_events(parse_json_field(trace.get("toolEvents"))),
+                trace_summary=trace.get("trace") or summary,
+                messages=messages,
+                tool_events=tool_events,
                 file_diffs=extract_file_diffs(diff_text),
             )
         )

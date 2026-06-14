@@ -474,21 +474,39 @@ def _format_block(text: str, indent: str = "      ") -> str:
 
 
 def _unwrap_output(d: dict) -> object:
-    """Unwrap a single-payload output dict.
+    """Unwrap a wrapped output dict into its human-readable payload.
 
-    Proposal outputs often look like ``{"type": "ReadFile", "FileContent": {"content": "..."}}``.
-    Strip ``type`` and, if exactly one key remains whose value is a dict with a
-    single string value, return that string.  Otherwise return the dict as-is.
+    Proposal outputs use two patterns:
+
+    1. Single-wrapper: ``{"type": "ReadFile", "FileContent": {"content": "..."}}``
+       — strip *type*, descend into the single remaining dict and pull
+       ``content`` / ``*_for_prompt``.
+    2. Flat wrapper: ``{"type": "Bash", "output_for_prompt": "exit: 0\\n...", ...}``
+       — prefer the ``*_for_prompt`` key directly.
+
+    Model-ranking outputs are already plain strings and never reach here.
     """
     remaining = {k: v for k, v in d.items() if k not in _SKIP_OUTPUT_KEYS}
+
+    # Prefer a *_for_prompt key at top level (e.g. Bash output_for_prompt).
+    for k, v in remaining.items():
+        if k.endswith("_for_prompt") and isinstance(v, str) and v.strip():
+            return v
+
     if len(remaining) == 1:
         inner = next(iter(remaining.values()))
-        if isinstance(inner, dict) and len(inner) == 1:
-            sole = next(iter(inner.values()))
-            if isinstance(sole, str):
-                return sole
+        if isinstance(inner, dict):
+            for ik in ("content", "tool_output_for_prompt", "summary_for_prompt"):
+                iv = inner.get(ik)
+                if isinstance(iv, str) and iv.strip():
+                    return iv
+            if len(inner) == 1:
+                sole = next(iter(inner.values()))
+                if isinstance(sole, str):
+                    return sole
         if isinstance(inner, str):
             return inner
+
     return remaining
 
 
@@ -533,7 +551,10 @@ def trace_event_detail_widgets(ev: object) -> list[Static]:
     if raw_input:
         args = try_parse(raw_input)
         if isinstance(args, dict) and args:
-            filtered = {k: v for k, v in args.items() if k not in _SKIP_INPUT_KEYS and v is not None}
+            filtered = {
+                k: v for k, v in args.items()
+                if k not in _SKIP_INPUT_KEYS and v is not None and v is not False
+            }
             if filtered:
                 widgets.append(Static("  [bold]args:[/]"))
                 for k, v in filtered.items():

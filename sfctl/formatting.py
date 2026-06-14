@@ -98,8 +98,10 @@ def group_events(events: list) -> dict[str, list]:
 def format_event_line(ev: object) -> str:
     title = ev.title if hasattr(ev, "title") else ev.get("title") if isinstance(ev, dict) else ""
     name = ev.name if hasattr(ev, "name") else ev.get("name", "") if isinstance(ev, dict) else ""
-    label = sanitize(str(title)) if title else sanitize(clean_event_name(str(name)))
+    label = sanitize(clean_event_name(str(name))) if name else sanitize(str(title))
     parts = [f"[bold]{label}[/]"]
+    if name and title and title != name:
+        parts.append(f"[dim]{sanitize(str(title), 60)}[/]")
     exit_code = ev.exit_code if hasattr(ev, "exit_code") else ev.get("exit_code") if isinstance(ev, dict) else ""
     if exit_code and exit_code != "no_error":
         parts.append(f"[bold red]{sanitize(str(exit_code), 50)}[/]")

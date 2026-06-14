@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 TASK_ID = "t-EXAMPLE001"
 
 
@@ -276,7 +278,7 @@ class TestTraceFormatting:
 
 class TestToolNameFromInput:
     def test_pascal_case_variant(self):
-        from sfctl.proposal import tool_name_from_input
+        from sfctl.diff import tool_name_from_input
 
         assert tool_name_from_input('{"variant":"ReadFile"}') == "read_file"
         assert tool_name_from_input('{"variant":"SearchReplace"}') == "search_replace"
@@ -287,12 +289,12 @@ class TestToolNameFromInput:
         assert tool_name_from_input('{"variant":"UpdateGoal"}') == "update_goal"
 
     def test_dict_input(self):
-        from sfctl.proposal import tool_name_from_input
+        from sfctl.diff import tool_name_from_input
 
         assert tool_name_from_input({"variant": "ReadFile"}) == "read_file"
 
     def test_empty_input(self):
-        from sfctl.proposal import tool_name_from_input
+        from sfctl.diff import tool_name_from_input
 
         assert tool_name_from_input("") == ""
         assert tool_name_from_input("{}") == ""
@@ -461,8 +463,12 @@ class TestParseProposal:
 
         trace = {
             "trace": "Summary of work done",
-            "messages": '[{"role": "assistant", "content": "done"}]',
-            "toolEvents": '[{"name": "list_dir", "wall_time": 100}]',
+            "messages": json.dumps([
+                {"role": "tool_call", "title": "list_dir", "timestamp": 1,
+                 "rawInput": {"variant": "ListDir", "target_directory": "."},
+                 "rawOutput": {"text": "file1\nfile2"}, "status": "completed"},
+                {"role": "assistant", "content": "done"},
+            ]),
         }
         p = parse_proposal(proposal_data["history"], trace)
         assert p.trace_summary == "Summary of work done"
