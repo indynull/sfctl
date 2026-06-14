@@ -16,7 +16,13 @@ dependencies = [
     "httpx>=0.28",
     "pydantic>=2.13.4",
     "redlines>=0.6.1",
-    "textual>=8.2.7",
+    "textual[syntax]>=8.2.7",
+    "tree-sitter-c>=0.23",
+    "tree-sitter-cpp>=0.22",
+    "tree-sitter-kotlin>=0.1",
+    "tree-sitter-php>=0.23",
+    "tree-sitter-ruby>=0.23",
+    "tree-sitter-typescript>=0.23",
 ]
 
 [project.scripts]

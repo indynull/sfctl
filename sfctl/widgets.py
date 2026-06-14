@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from threading import Thread
 
+from rich.color import Color
 from rich.segment import Segment
 from rich.style import Style
 from textual.binding import Binding
@@ -16,7 +16,12 @@ from textual.widget import Widget
 from textual.widgets import Collapsible, Static, TextArea
 
 from sfctl.constants import ARROW_DOWN, ARROW_RIGHT, ARROW_UP
-from sfctl.parsing import _sanitize, build_diff_line_map
+from sfctl.parsing import (
+    _sanitize,
+    build_diff_line_map,
+    language_from_filename,
+    parse_diff_lines,
+)
 
 
 class SplitHandle(Widget):
@@ -68,28 +73,82 @@ class SplitHandle(Widget):
         top.styles.height = f"{round(frac * 100)}fr"
         bottom.styles.height = f"{round((1 - frac) * 100)}fr"
 
-_STYLE_HUNK = Style(color="cyan", bold=True)
-_STYLE_INSERTED = Style(color="green")
-_STYLE_DELETED = Style(color="red")
+_KOTLIN_HIGHLIGHTS = """\
+[
+  "fun" "val" "var" "class" "object" "interface" "enum" "when" "if" "else"
+  "for" "while" "do" "return" "throw" "try" "catch" "finally"
+  "import" "package" "is" "as" "in" "by" "constructor" "companion" "init"
+  "this" "super" "abstract" "final" "open" "override" "private" "protected"
+  "public" "internal" "sealed" "data" "suspend" "tailrec" "operator" "infix"
+  "inline" "external" "annotation" "crossinline" "noinline" "typealias"
+  "lateinit" "const"
+] @keyword
+(string_literal) @string
+(line_comment) @comment
+(block_comment) @comment
+(function_declaration (identifier) @function)
+(call_expression (identifier) @function)
+(class_declaration (identifier) @type)
+(user_type) @type
+"""
 
 
-def _build_line_styles(text: str) -> list[Style]:
-    """Compute a style for each line of a unified diff based on its prefix."""
-    styles: list[Style] = []
-    for line in text.split("\n"):
-        if line.startswith("@@"):
-            styles.append(_STYLE_HUNK)
-        elif line.startswith("+"):
-            styles.append(_STYLE_INSERTED)
-        elif line.startswith("-"):
-            styles.append(_STYLE_DELETED)
-        else:
-            styles.append(Style.null())
-    return styles
+def _load_extra_language(lang: str) -> tuple[object | None, str | None]:
+    """Load a tree-sitter language capsule and highlight query for non-builtin languages."""
+    if lang == "c":
+        import tree_sitter_c
+        return tree_sitter_c.language(), tree_sitter_c.HIGHLIGHTS_QUERY
+    if lang == "cpp":
+        import tree_sitter_cpp
+        return tree_sitter_cpp.language(), tree_sitter_cpp.HIGHLIGHTS_QUERY
+    if lang == "ruby":
+        import tree_sitter_ruby
+        return tree_sitter_ruby.language(), tree_sitter_ruby.HIGHLIGHTS_QUERY
+    if lang == "php":
+        import tree_sitter_php
+        return tree_sitter_php.language_php(), tree_sitter_php.HIGHLIGHTS_QUERY
+    if lang in ("typescript", "tsx"):
+        import importlib.resources
+
+        import tree_sitter_typescript
+        capsule = (
+            tree_sitter_typescript.language_tsx()
+            if lang == "tsx"
+            else tree_sitter_typescript.language_typescript()
+        )
+        query = (
+            importlib.resources.files("tree_sitter_typescript")
+            / "queries"
+            / "highlights.scm"
+        ).read_text()
+        return capsule, query
+    if lang == "kotlin":
+        import tree_sitter_kotlin
+        return tree_sitter_kotlin.language(), _KOTLIN_HIGHLIGHTS
+    return None, None
+
+
+_MARKER_ADD = Style(color="#4ec94e", bold=True)
+_MARKER_DEL = Style(color="#e05050", bold=True)
+_MARKER_HUNK = Style(color="#5f87ff", bold=True)
+_KIND_MARKER = {"add": ("+", _MARKER_ADD), "del": ("-", _MARKER_DEL), "hunk": ("~", _MARKER_HUNK)}
+
+_TINT_ADD = (0, 20, 0)
+_TINT_DEL = (20, 0, 0)
+_TINT_HUNK = (0, 8, 18)
+_KIND_TINT = {"add": _TINT_ADD, "del": _TINT_DEL, "hunk": _TINT_HUNK}
+
+
+def _blend_bg(base: Color, tint: tuple[int, int, int]) -> Style:
+    """Blend a tint into a base color to produce a subtle background style."""
+    r, g, b = base.triplet
+    tr, tg, tb = tint
+    return Style(bgcolor=f"#{min(r+tr,255):02x}{min(g+tg,255):02x}{min(b+tb,255):02x}")
 
 
 class DiffDisplay(TextArea):
-    """Read-only TextArea for diffs with syntax highlighting and text selection."""
+    """Read-only TextArea showing diffs with tree-sitter syntax highlighting
+    and subtle background shading for added/deleted lines."""
 
     class VoteRequested(Message):
         def __init__(self, delta: int) -> None:
@@ -114,34 +173,67 @@ class DiffDisplay(TextArea):
     def action_yank(self) -> None:
         self.post_message(self.YankRequested())
 
+    def original_lines(self, start: int, end: int) -> str:
+        """Return original diff lines (with +/- prefixes) for a line range."""
+        lines = self._diff_lines[start : end + 1]
+        return "\n".join(dl.source for dl in lines)
+
     def __init__(self, text: str, model_name: str, filename: str, **kwargs):
-        super().__init__(text, read_only=True, show_line_numbers=True, soft_wrap=False, **kwargs)
+        diff_lines = parse_diff_lines(text)
+        self._diff_lines = diff_lines
+        clean_text = "\n".join(dl.text for dl in diff_lines)
+        lang = language_from_filename(filename)
+        super().__init__(
+            clean_text, read_only=True,
+            show_line_numbers=True, soft_wrap=False, **kwargs,
+        )
+        self._register_extra_language(lang)
+        if lang:
+            self.language = lang
         self.diff_text = text
         self.model_name = model_name
         self.filename = filename
-        self._line_styles: list[Style] | None = None
-        self._tokenize_started = False
         self._diff_line_map = build_diff_line_map(text)
-        # Width of the gutter based on the max line number
         max_num = max(self._diff_line_map.values()) if self._diff_line_map else 0
         self._gutter_width = len(str(max_num)) + 1
 
-    def _start_tokenize(self) -> None:
-        if self._tokenize_started:
+    def _register_extra_language(self, lang: str | None) -> None:
+        if not lang or lang in self.available_languages:
             return
-        self._tokenize_started = True
+        try:
+            from tree_sitter import Language
+            ts_lang, query = _load_extra_language(lang)
+            if ts_lang and query:
+                self.register_language(lang, Language(ts_lang), query)
+        except (ImportError, OSError):
+            pass
 
-        def _build():
-            self._line_styles = _build_line_styles(self.diff_text)
-            self.app.call_from_thread(self.refresh)
+    _bg_cache: dict[str, Style] | None = None
+    _bg_cache_key: tuple[int, int, int] | None = None
 
-        Thread(target=_build, daemon=True).start()
+    def _get_kind_bg(self, kind: str) -> Style | None:
+        tint = _KIND_TINT.get(kind)
+        if not tint:
+            return None
+        theme = self._theme
+        base = (
+            theme.base_style.bgcolor if theme and theme.base_style else None
+        ) or self.background_colors[1]
+        if hasattr(base, "triplet") and base.triplet:
+            rgb = (base.triplet.red, base.triplet.green, base.triplet.blue)
+        else:
+            rgb = (30, 30, 30)
+        if self._bg_cache is not None and self._bg_cache_key == rgb:
+            return self._bg_cache.get(kind)
+        self._bg_cache_key = rgb
+        base_color = Color.from_rgb(rgb[0], rgb[1], rgb[2])
+        self._bg_cache = {k: _blend_bg(base_color, t) for k, t in _KIND_TINT.items()}
+        return self._bg_cache.get(kind)
 
     def render_line(self, y: int) -> Strip:
         strip = super().render_line(y)
         line_index = y + self.scroll_offset.y
 
-        # Replace TextArea's default line numbers with real source numbers
         if self.show_line_numbers and self._diff_line_map is not None:
             gutter_style = self.get_component_rich_style("text-area--gutter")
             real_num = self._diff_line_map.get(line_index)
@@ -151,26 +243,31 @@ class DiffDisplay(TextArea):
                 else " " * (self._gutter_width + 1)
             )
             gutter = Strip([Segment(gutter_text, gutter_style)])
-            # Remove the original gutter (first segment group up to gutter_width)
             orig_gutter_len = self.gutter_width
             strip = strip.crop(orig_gutter_len, strip.cell_length)
             strip = Strip.join([gutter, strip])
 
-        # Start tokenization on first render
-        if not self._tokenize_started:
-            self._start_tokenize()
-            return strip
+        if 0 <= line_index < len(self._diff_lines):
+            kind = self._diff_lines[line_index].kind
+            marker_info = _KIND_MARKER.get(kind)
+            if marker_info:
+                char, marker_style = marker_info
+                marker = Strip([Segment(char, marker_style)])
+            else:
+                marker = Strip([Segment(" ", Style.null())])
+            strip = Strip.join([marker, strip])
 
-        # Apply syntax highlighting
-        styles = self._line_styles
-        if styles is not None and 0 <= line_index < len(styles):
-            style = styles[line_index]
-            if style != Style.null():
+            bg = self._get_kind_bg(kind)
+            if bg:
                 new_segments = []
-                for text, seg_style, control in strip._segments:
-                    merged = seg_style + style if seg_style else style
-                    new_segments.append(Segment(text, merged, control))
+                for seg_text, seg_style, control in strip._segments:
+                    if seg_style and seg_style.bgcolor:
+                        new_segments.append(Segment(seg_text, seg_style, control))
+                    else:
+                        merged = (seg_style + bg) if seg_style else bg
+                        new_segments.append(Segment(seg_text, merged, control))
                 strip = Strip(new_segments, strip.cell_length)
+
         return strip
 
 

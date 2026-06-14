@@ -22,33 +22,33 @@ class TestSanitize:
         assert _sanitize("") == ""
 
 
-class TestBuildLineStyles:
-    def test_returns_styles_for_diff(self):
-        from sfctl.widgets import _build_line_styles
+class TestParseDiffLines:
+    def test_parses_kinds(self):
+        from sfctl.parsing import parse_diff_lines
 
         diff = "@@ -1,3 +1,3 @@\n-old line\n+new line\n context"
-        styles = _build_line_styles(diff)
-        assert len(styles) == 4
+        lines = parse_diff_lines(diff)
+        assert len(lines) == 4
+        assert lines[0].kind == "hunk"
+        assert lines[1].kind == "del"
+        assert lines[2].kind == "add"
+        assert lines[3].kind == "ctx"
+
+    def test_strips_prefix(self):
+        from sfctl.parsing import parse_diff_lines
+
+        diff = "@@ -1,2 +1,2 @@\n-old\n+new\n ctx"
+        lines = parse_diff_lines(diff)
+        assert lines[1].text == "old"
+        assert lines[2].text == "new"
+        assert lines[3].text == "ctx"
 
     def test_empty_text(self):
-        from sfctl.widgets import _build_line_styles
+        from sfctl.parsing import parse_diff_lines
 
-        styles = _build_line_styles("")
-        assert isinstance(styles, list)
-
-    def test_styles_match_line_prefixes(self):
-        from rich.style import Style
-
-        from sfctl.widgets import _STYLE_DELETED, _STYLE_HUNK, _STYLE_INSERTED, _build_line_styles
-
-        diff = "@@ -1,3 +1,4 @@\n context1\n+added\n context2\n-deleted"
-        styles = _build_line_styles(diff)
-        assert len(styles) == 5
-        assert styles[0] == _STYLE_HUNK
-        assert styles[1] == Style.null()
-        assert styles[2] == _STYLE_INSERTED
-        assert styles[3] == Style.null()
-        assert styles[4] == _STYLE_DELETED
+        lines = parse_diff_lines("")
+        assert isinstance(lines, list)
+        assert len(lines) == 1
 
 
 class TestFormatValue:
@@ -241,16 +241,12 @@ class TestDiffDisplay:
                 yield DiffDisplay(diff_text, "A", "test.py")
 
         app = TestApp()
-        async with app.run_test(size=(80, 24)) as pilot:
+        async with app.run_test(size=(80, 24)):
             dd = app.query_one(DiffDisplay)
             assert dd.diff_text == diff_text
             assert dd.model_name == "A"
             assert dd.filename == "test.py"
-            # Wait for tokenization
-            for _ in range(20):
-                if dd._line_styles is not None:
-                    break
-                await pilot.pause()
+            assert len(dd._diff_lines) == 4
 
     @pytest.mark.asyncio
     async def test_empty_diff(self):
@@ -268,7 +264,7 @@ class TestDiffDisplay:
             assert dd._gutter_width >= 1
 
     @pytest.mark.asyncio
-    async def test_double_start_tokenize(self):
+    async def test_syntax_language_set(self):
         from textual.app import App, ComposeResult
 
         from sfctl.widgets import DiffDisplay
@@ -278,8 +274,6 @@ class TestDiffDisplay:
                 yield DiffDisplay("@@ -1 +1 @@\n-x\n+y", "A", "f.py")
 
         app = TestApp()
-        async with app.run_test(size=(80, 24)) as pilot:
+        async with app.run_test(size=(80, 24)):
             dd = app.query_one(DiffDisplay)
-            await pilot.pause()
-            dd._start_tokenize()  # second call -- should early-return
-            assert dd._tokenize_started
+            assert dd.language == "python"

@@ -80,6 +80,83 @@ def get_full_ranking(entry: dict, key: str) -> str:
     return " > ".join(parts)
 
 
+_EXT_TO_LANGUAGE: dict[str, str] = {
+    ".py": "python",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".md": "markdown",
+    ".html": "html",
+    ".htm": "html",
+    ".css": "css",
+    ".xml": "xml",
+    ".sql": "sql",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".zsh": "bash",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".hxx": "cpp",
+    ".rb": "ruby",
+    ".php": "php",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+}
+
+
+def language_from_filename(filename: str) -> str | None:
+    """Map a filename to a TextArea language identifier, or None if unknown."""
+    dot = filename.rfind(".")
+    if dot < 0:
+        return None
+    return _EXT_TO_LANGUAGE.get(filename[dot:].lower())
+
+
+class DiffLine:
+    """A single parsed line from a unified diff."""
+
+    __slots__ = ("kind", "source", "text")
+
+    def __init__(self, kind: str, text: str, source: str) -> None:
+        self.kind = kind
+        self.text = text
+        self.source = source
+
+
+def parse_diff_lines(diff_text: str) -> list[DiffLine]:
+    """Parse unified diff text into structured DiffLines.
+
+    Each line gets a kind: 'add', 'del', 'ctx', 'hunk', or 'meta'.
+    ``text`` is the clean source (prefix stripped).
+    ``source`` is the original diff line.
+    """
+    result: list[DiffLine] = []
+    for line in diff_text.split("\n"):
+        if line.startswith("@@"):
+            result.append(DiffLine("hunk", line, line))
+        elif line.startswith("+"):
+            result.append(DiffLine("add", line[1:], line))
+        elif line.startswith("-"):
+            result.append(DiffLine("del", line[1:], line))
+        else:
+            result.append(DiffLine("ctx", line[1:] if line.startswith(" ") else line, line))
+    return result
+
+
 def build_diff_line_map(diff_text: str) -> dict[int, int]:
     """Map diff-text line indices to real source line numbers.
 
