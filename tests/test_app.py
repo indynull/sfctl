@@ -1121,7 +1121,7 @@ class TestProposalApp:
         app = StarfleetApp("t-PROP001", proposal_data)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert 0 in app._populated_models
+            assert app._overview_populated
 
     @pytest.mark.asyncio
     async def test_proposal_tabs_exist(self, proposal_data):
@@ -1131,6 +1131,8 @@ class TestProposalApp:
 
         app = StarfleetApp("t-PROP001", proposal_data)
         async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
             await pilot.pause()
             model_tabs = app.query_one("#tabs-model-a", TabbedContent)
             assert model_tabs.tab_count >= 1  # Trace, (Response, Diffs if present)
@@ -1154,6 +1156,8 @@ class TestProposalApp:
             await pilot.pause()
             assert app.check_action("vote_up", ()) is False
             assert app.check_action("vote_down", ()) is False
+            await pilot.press("m")
+            await pilot.pause()
             assert app.check_action("search_diffs", ()) is True
 
     @pytest.mark.asyncio
@@ -1164,6 +1168,8 @@ class TestProposalApp:
 
         app = StarfleetApp("t-PROP001", proposal_data)
         async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
             await pilot.pause()
             tabs = app.query_one("#tabs-model-a", TabbedContent)
             initial = tabs.active

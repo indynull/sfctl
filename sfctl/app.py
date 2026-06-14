@@ -212,7 +212,7 @@ class StarfleetApp(App):
             mid = model_id(0)
             with (
                 Vertical(id=ids.CONTENT_AREA),
-                ContentSwitcher(initial=mid, id=ids.MAIN_SWITCHER),
+                ContentSwitcher(initial=ids.OVERVIEW, id=ids.MAIN_SWITCHER),
             ):
                 with ScrollableContainer(id=mid):
                     yield Static("[bold]Model[/bold]", classes="view-header", id=model_header_id(mid))
@@ -576,7 +576,7 @@ class StarfleetApp(App):
             self._maybe_show_tutorial()
             return
         if self.task_type == TaskType.PROJECT_PROPOSAL:
-            await self._populate_proposal_model()
+            await self._populate_proposal()
             self.notify(f"Loaded proposal {self.task_id}")
             self._maybe_show_tutorial()
             return
