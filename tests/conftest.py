@@ -109,6 +109,12 @@ def _proposal_history_entry(
                             "bashHistory": [
                                 {"timestamp": "2026-05-28T14:11:19Z", "command": "uv sync"}
                             ],
+                            "prePromptSystemMetrics": {
+                                "capturedAt": "2026-05-28T14:11:30.000000000Z",
+                            },
+                            "postPromptSystemMetrics": {
+                                "capturedAt": "2026-05-28T14:25:00.000000000Z",
+                            },
                         }
                     ],
                     "finalFeedback": [

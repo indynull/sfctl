@@ -443,7 +443,7 @@ class TestParseProposal:
 
         p = parse_proposal(proposal_data["history"])
         assert p.trace_elapsed_ms is not None
-        assert 800000 < p.trace_elapsed_ms < 900000  # ~14.5 minutes
+        assert p.trace_elapsed_ms == 810000  # 13.5 minutes (per-turn metrics)
 
     def test_trace_data_real_format(self, proposal_data):
         from sfctl.proposal import parse_proposal
@@ -480,6 +480,63 @@ class TestParseProposal:
         assert p.trace_summary == ""
         assert p.tool_events == []
         assert p.messages == []
+
+    def test_trace_elapsed_excludes_user_wait(self):
+        from sfctl.diff import parse_messages_trace
+
+        items = [
+            {"role": "tool_call", "timestamp": 1000, "toolCallId": "tc1",
+             "title": "List `.`", "status": "completed",
+             "rawInput": '{"variant":"ListDir"}', "rawOutput": "files"},
+            {"role": "assistant", "timestamp": 5000,
+             "content": "Here is my plan, please approve."},
+            {"role": "user", "timestamp": 65000,
+             "content": "Looks good, go ahead."},
+            {"role": "tool_call", "timestamp": 66000, "toolCallId": "tc2",
+             "title": "Read `foo.py`", "status": "completed",
+             "rawInput": '{"variant":"ReadFile"}', "rawOutput": "contents"},
+            {"role": "assistant", "timestamp": 70000, "content": "x" * 300},
+        ]
+        _, events, _, elapsed = parse_messages_trace(items)
+        # Total wall: 70000-1000 = 69000ms
+        # User wait: 65000-5000 = 60000ms (gap before user message)
+        # Model work: 69000-60000 = 9000ms
+        assert elapsed == 9000
+        # First tool_call wall_time: 5000-1000 = 4000 (stops at assistant, not inflated)
+        assert events[0].wall_time == 4000
+
+    def test_trace_elapsed_no_user_messages(self):
+        from sfctl.diff import parse_messages_trace
+
+        items = [
+            {"role": "tool_call", "timestamp": 1000, "toolCallId": "tc1",
+             "title": "List `.`", "status": "completed",
+             "rawInput": '{"variant":"ListDir"}', "rawOutput": "files"},
+            {"role": "tool_call", "timestamp": 5000, "toolCallId": "tc2",
+             "title": "Read `foo.py`", "status": "completed",
+             "rawInput": '{"variant":"ReadFile"}', "rawOutput": "contents"},
+        ]
+        _, _, _, elapsed = parse_messages_trace(items)
+        assert elapsed == 4000
+
+    def test_user_wait_not_in_wall_time(self):
+        from sfctl.diff import parse_messages_trace
+
+        items = [
+            {"role": "tool_call", "timestamp": 1000, "toolCallId": "tc1",
+             "title": "List `.`", "status": "completed",
+             "rawInput": '{"variant":"ListDir"}', "rawOutput": "files"},
+            {"role": "assistant", "timestamp": 2000, "content": "Plan..."},
+            {"role": "user", "timestamp": 50000, "content": "OK"},
+            {"role": "tool_call", "timestamp": 51000, "toolCallId": "tc2",
+             "title": "Read `foo.py`", "status": "completed",
+             "rawInput": '{"variant":"ReadFile"}', "rawOutput": "contents"},
+        ]
+        _, events, _, elapsed = parse_messages_trace(items)
+        # tool_call at ts=1000 should NOT have wall_time inflated by user wait
+        assert events[0].wall_time == 1000  # 2000-1000, stops at assistant_thinking
+        # total=51000-1000=50000, user_wait=50000-2000=48000, elapsed=2000
+        assert elapsed == 2000
 
     def test_no_trace(self, proposal_data):
         from sfctl.proposal import parse_proposal
@@ -667,7 +724,35 @@ class TestProposalRunElapsed:
         }}}}
         ms = _proposal_run_elapsed_ms(entry)
         assert ms is not None
-        assert 1200000 < ms < 1400000  # ~21.7 minutes
+        assert 1200000 < ms < 1400000  # ~21.7 minutes (fallback to session summary)
+
+    def test_multi_turn_active_time(self):
+        from sfctl.proposal import _proposal_run_elapsed_ms
+
+        entry = {"coding_question": {"rollouts": {"A": {
+            "turns": [
+                {
+                    "prePromptSystemMetrics": {"capturedAt": "2026-05-01T11:19:00.000Z"},
+                    "postPromptSystemMetrics": {"capturedAt": "2026-05-01T11:22:00.000Z"},
+                },
+                {
+                    "prePromptSystemMetrics": {"capturedAt": "2026-05-01T11:32:00.000Z"},
+                    "postPromptSystemMetrics": {"capturedAt": "2026-05-01T11:53:00.000Z"},
+                },
+                {
+                    "prePromptSystemMetrics": {"capturedAt": "2026-05-01T11:56:00.000Z"},
+                    "postPromptSystemMetrics": {"capturedAt": "2026-05-01T12:15:00.000Z"},
+                },
+            ],
+            "finalSessionSummary": {
+                "created_at": "2026-05-01T11:16:00.000Z",
+                "last_active_at": "2026-05-01T12:15:00.000Z",
+            },
+        }}}}
+        ms = _proposal_run_elapsed_ms(entry)
+        # Turn 0: 3m, Turn 1: 21m, Turn 2: 19m = 43m total active
+        # Wall clock would be 59m (includes 16m user idle between turns)
+        assert ms == 43 * 60 * 1000
 
 
 class TestEditActions:

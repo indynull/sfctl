@@ -308,6 +308,7 @@ class TestTraceEventDetailWidgets:
         assert "variant" not in combined.lower().split("command")[0]
 
 
+
 class TestLazyCollapsible:
     def test_for_diff(self):
         from sfctl.widgets import LazyCollapsible

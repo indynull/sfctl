@@ -321,6 +321,8 @@ def parse_messages_trace(
     pending_ev: TraceEvent | None = None
     first_ts: int | None = None
     last_ts: int | None = None
+    prev_ts: int | None = None
+    user_wait_ms = 0
 
     for item in items:
         ts = item.get("timestamp")
@@ -328,10 +330,21 @@ def parse_messages_trace(
             if first_ts is None:
                 first_ts = ts
             last_ts = ts
+        role = item.get("role", "")
+        if role == "user":
+            if pending_ev:
+                pending_ev = None
+            if ts and prev_ts and ts > prev_ts:
+                user_wait_ms += ts - prev_ts
+            content = item.get("content", "")
+            if isinstance(content, list):
+                content = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
+            messages.append({"role": role, "content": content})
+            prev_ts = ts
+            continue
         if pending_ev and ts and pending_ev.timestamp and ts > pending_ev.timestamp:
             pending_ev.wall_time = ts - pending_ev.timestamp
             pending_ev = None
-        role = item.get("role", "")
         if role == "tool_call":
             title = item.get("title", "")
             raw_input = item.get("rawInput", "")
@@ -358,18 +371,20 @@ def parse_messages_trace(
                 )
                 tool_events.append(ev)
                 pending_ev = ev
-        elif role in ("assistant", "user"):
+        elif role == "assistant":
             content = item.get("content", "")
             if isinstance(content, list):
                 content = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
             messages.append({"role": role, "content": content})
+        prev_ts = ts if ts else prev_ts
 
     for msg in reversed(messages):
         if msg["role"] == "assistant" and len(msg.get("content", "")) > 200:
             summary = msg["content"]
             break
 
-    elapsed_ms = (last_ts - first_ts) if first_ts and last_ts and last_ts > first_ts else None
+    total_ms = (last_ts - first_ts) if first_ts and last_ts and last_ts > first_ts else None
+    elapsed_ms = (total_ms - user_wait_ms) if total_ms and user_wait_ms else total_ms
     return summary, tool_events, messages, elapsed_ms
 
 

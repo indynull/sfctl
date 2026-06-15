@@ -181,8 +181,25 @@ def _parse_iso(ts: str) -> datetime | None:
 
 
 def _proposal_run_elapsed_ms(entry: dict) -> int | None:
-    """Compute model run duration in ms from finalSessionSummary timestamps."""
+    """Compute model-active duration in ms.
+
+    Sums ``postPromptSystemMetrics.capturedAt - prePromptSystemMetrics.capturedAt``
+    across all turns to exclude user idle time between turns.  Falls back to
+    ``finalSessionSummary`` wall-clock if per-turn metrics are missing.
+    """
     rollout = _proposal_rollout(entry)
+    turns = rollout.get("turns", [])
+    active_ms = 0
+    any_turn = False
+    for turn in turns:
+        pre = _parse_iso((turn.get("prePromptSystemMetrics") or {}).get("capturedAt", ""))
+        post = _parse_iso((turn.get("postPromptSystemMetrics") or {}).get("capturedAt", ""))
+        if pre and post and post > pre:
+            active_ms += int((post - pre).total_seconds() * 1000)
+            any_turn = True
+    if any_turn:
+        return active_ms
+
     session = rollout.get("finalSessionSummary") or {}
     created = _parse_iso(session.get("created_at", ""))
     updated = _parse_iso(session.get("last_active_at") or session.get("updated_at", ""))
