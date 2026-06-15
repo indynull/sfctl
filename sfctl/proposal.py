@@ -107,9 +107,8 @@ def parse_proposal(history: list[dict], trace: dict | None = None) -> ProposalDa
     ) or {}
     model_id = session.get("current_model_id", "")
 
-    trace_summary, tool_events, messages, trace_elapsed_ms = _parse_proposal_trace(trace)
-    if not trace_elapsed_ms:
-        trace_elapsed_ms = _proposal_run_elapsed_ms(entry)
+    trace_summary, tool_events, messages, _ = _parse_proposal_trace(trace)
+    trace_elapsed_ms = _proposal_run_elapsed_ms(entry)
 
     return ProposalData(
         repo_url=repo_url,
@@ -205,6 +204,22 @@ def _proposal_run_elapsed_ms(entry: dict) -> int | None:
     if created and updated and updated > created:
         return int((updated - created).total_seconds() * 1000)
     return None
+
+
+def format_proposal_entry(entry: dict) -> str:
+    """Format a proposal history entry's metadata as Rich markup."""
+    parts: list[str] = []
+    ms = _proposal_run_elapsed_ms(entry)
+    if ms:
+        parts.append(f"[bold]Model run:[/bold] {format_duration(ms)}")
+    solved = sf_value(entry.get("opus_solved"))
+    if solved:
+        color = {"full": "green", "partial": "yellow", "no": "red"}.get(solved, "white")
+        parts.append(f"[bold]Solved:[/bold] [{color}]{solved}[/{color}]")
+    duration = sf_value(entry.get("opus_duration"))
+    if duration:
+        parts.append(f"[bold]Duration:[/bold] {duration}")
+    return "  |  ".join(parts) if parts else ""
 
 
 def has_proposal_changes(prev: dict, curr: dict) -> bool:

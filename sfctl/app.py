@@ -57,7 +57,12 @@ from sfctl.ids import (
     tab_trace_id,
 )
 from sfctl.models import ModelData, ModelScores, ParsedContent, ProposalData
-from sfctl.proposal import has_proposal_changes, parse_proposal, proposal_all_changes
+from sfctl.proposal import (
+    format_proposal_entry,
+    has_proposal_changes,
+    parse_proposal,
+    proposal_all_changes,
+)
 from sfctl.scoring import ReviewState
 from sfctl.screens import HelpModal
 from sfctl.search import SearchController
@@ -517,7 +522,11 @@ class StarfleetApp(App):
             await tabs.add_pane(pane)
 
             widgets: list = []
-            if not is_proposal:
+            if is_proposal:
+                header = format_proposal_entry(entry)
+                if header:
+                    widgets.append(Static(header))
+            else:
                 widgets.append(Static(format_history_entry(entry, orig_idx)))
 
             for fb in entry_fb:
