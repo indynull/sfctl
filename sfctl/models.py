@@ -122,9 +122,7 @@ class TraceEvent:
     input: str | dict = ""
     output: str | dict = ""
 
-    def get(self, key: str, default: object = None) -> object:
-        """Dict-compatible accessor for gradual migration."""
-        return getattr(self, key, default)
+
 
 
 @dataclass(slots=True)

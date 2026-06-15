@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
-from sfctl.diff import extract_file_diffs, parse_json_field, parse_messages_trace
+from sfctl.diff import extract_file_diffs, parse_messages_trace
 from sfctl.formatting import format_duration, sanitize
 from sfctl.models import ProposalData, TraceEvent
 
@@ -37,22 +37,10 @@ def extract_rubrics(rubrics_field: dict | None) -> list[str]:
 def _parse_proposal_trace(
     trace: dict | None,
 ) -> tuple[str, list[TraceEvent], list[dict], int | None]:
-    """Parse a proposal trace into (summary, tool_events, messages, elapsed_ms).
-
-    Accepts both the messages-list format (``{"trace": [list of items]}``)
-    and the legacy pre-extracted format (``{"trace": "summary", "toolEvents": ...}``),
-    delegating to the shared ``parse_messages_trace`` parser.
-    """
+    """Parse a proposal trace (always a list of message dicts)."""
     if not trace:
         return "", [], [], None
-
     items = trace.get("trace")
-    if isinstance(items, str):
-        raw_messages = parse_json_field(trace.get("messages"))
-        if raw_messages and any(m.get("role") == "tool_call" for m in raw_messages if isinstance(m, dict)):
-            summary, tool_events, messages, elapsed_ms = parse_messages_trace(raw_messages)
-            return items or summary, tool_events, messages, elapsed_ms
-        return items, [], raw_messages, None
     if isinstance(items, list):
         return parse_messages_trace(items)
     return "", [], [], None
@@ -74,7 +62,7 @@ def parse_proposal(history: list[dict], trace: dict | None = None) -> ProposalDa
     sessions = cq.get("sessions", [])
     repo_url = sessions[0].get("githubLink", "") if sessions else ""
 
-    rollout = cq.get("rollouts", {}).get("A") or cq.get("rolloutA") or cq.get("rollout") or {}
+    rollout = cq.get("rollouts", {}).get("A", {})
 
     final_fb = rollout.get("finalFeedback", [])
     prompt = ""
@@ -174,8 +162,7 @@ def _proposal_repo_url(entry: dict) -> str:
 
 def _proposal_rollout(entry: dict) -> dict:
     """Extract the rollout dict from a history entry."""
-    cq = entry.get("coding_question", {})
-    return cq.get("rollouts", {}).get("A") or cq.get("rolloutA") or cq.get("rollout") or {}
+    return entry.get("coding_question", {}).get("rollouts", {}).get("A", {})
 
 
 def _proposal_trace_ref(entry: dict) -> str:

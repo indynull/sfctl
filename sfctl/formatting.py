@@ -90,22 +90,17 @@ def trace_type_color(index: int) -> str:
 def group_events(events: list) -> dict[str, list]:
     grouped: dict[str, list] = defaultdict(list)
     for e in events:
-        name = e.name if hasattr(e, "name") else str(e.get("name", "")) if isinstance(e, dict) else ""
-        grouped[clean_event_name(name)].append(e)
+        grouped[clean_event_name(e.name)].append(e)
     return dict(grouped)
 
 
-def format_event_line(ev: object) -> str:
-    title = ev.title if hasattr(ev, "title") else ev.get("title") if isinstance(ev, dict) else ""
-    name = ev.name if hasattr(ev, "name") else ev.get("name", "") if isinstance(ev, dict) else ""
-    label = sanitize(clean_event_name(str(name))) if name else sanitize(str(title))
+def format_event_line(ev) -> str:
+    label = sanitize(clean_event_name(ev.name)) if ev.name else sanitize(ev.title)
     parts = [f"[bold]{label}[/]"]
-    if name and title and title != name:
-        parts.append(f"[dim]{sanitize(str(title), 60)}[/]")
-    exit_code = ev.exit_code if hasattr(ev, "exit_code") else ev.get("exit_code") if isinstance(ev, dict) else ""
-    if exit_code and exit_code != "no_error":
-        parts.append(f"[bold red]{sanitize(str(exit_code), 50)}[/]")
-    wall_time = ev.wall_time if hasattr(ev, "wall_time") else ev.get("wall_time") if isinstance(ev, dict) else None
-    if wall_time:
-        parts.append(f"[dim]{format_duration(wall_time)}[/]")
+    if ev.name and ev.title and ev.title != ev.name:
+        parts.append(f"[dim]{sanitize(ev.title, 60)}[/]")
+    if ev.exit_code and ev.exit_code != "no_error":
+        parts.append(f"[bold red]{sanitize(ev.exit_code, 50)}[/]")
+    if ev.wall_time:
+        parts.append(f"[dim]{format_duration(ev.wall_time)}[/]")
     return "  ".join(parts)

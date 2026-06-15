@@ -51,14 +51,7 @@ def model_rank(scores: list[ModelScores], index: int) -> int:
     return 0
 
 
-def _normalize_history(history: list | dict) -> list:
-    if not isinstance(history, list):
-        return [history]
-    return history
-
-
-def previous_ranking_summary(history: list | dict) -> str:
-    history = _normalize_history(history)
+def previous_ranking_summary(history: list) -> str:
     last = history[-1] if history else {}
     sections = []
     for key, label in [
@@ -81,7 +74,7 @@ def local_ranking_summary(scores: list[ModelScores]) -> str:
     return "  |  ".join(sections)
 
 
-def rankings_summary(scores: list[ModelScores], history: list | dict) -> str:
+def rankings_summary(scores: list[ModelScores], history: list) -> str:
     local = local_ranking_summary(scores)
     prev = previous_ranking_summary(history)
     if prev and local:
@@ -93,9 +86,8 @@ def rankings_summary(scores: list[ModelScores], history: list | dict) -> str:
     return ""
 
 
-def previous_model_rank(history: list | dict, index: int) -> int | None:
+def previous_model_rank(history: list, index: int) -> int | None:
     """Get the rank for a model from the most recent history entry (preference ranking)."""
-    history = _normalize_history(history)
     last = history[-1] if history else {}
     value = (last.get("preference_ranking") or {}).get("value") or []
     for rank, item in enumerate(value):

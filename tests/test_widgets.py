@@ -147,63 +147,79 @@ class TestTryParse:
 
 class TestTraceEventDetailWidgets:
     def test_dict_args_and_dict_output(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {
-            "args": {"path": "/tmp", "cmd": "ls"},
-            "output": {"status": "ok", "result": "done"},
-        }
+        ev = TraceEvent(
+            name="list_dir",
+            input={"path": "/tmp", "cmd": "ls"},
+            output={"status": "ok", "result": "done"},
+        )
         widgets = trace_event_detail_widgets(ev)
-        assert len(widgets) >= 4  # args header + 2 arg lines + output header + 2 output lines
+        assert len(widgets) >= 4
 
     def test_list_args(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"arguments": [1, 2, 3]}
+        ev = TraceEvent(name="test", input=[1, 2, 3])
         assert len(trace_event_detail_widgets(ev)) >= 1
 
     def test_string_args(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"input": "hello world"}
+        ev = TraceEvent(name="test", input="hello world")
         assert len(trace_event_detail_widgets(ev)) >= 1
 
     def test_list_output(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        assert len(trace_event_detail_widgets({"result": [1, 2]})) >= 1
+        ev = TraceEvent(name="test", output=[1, 2])
+        assert len(trace_event_detail_widgets(ev)) >= 1
 
     def test_string_output(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        assert len(trace_event_detail_widgets({"response": "some output"})) >= 1
+        ev = TraceEvent(name="test", output="some output")
+        assert len(trace_event_detail_widgets(ev)) >= 1
 
     def test_empty_event(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        assert trace_event_detail_widgets({}) == []
+        ev = TraceEvent(name="test")
+        assert trace_event_detail_widgets(ev) == []
 
     def test_json_string_args(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"args": '{"key": "val"}'}
+        ev = TraceEvent(name="test", input='{"key": "val"}')
         widgets = trace_event_detail_widgets(ev)
         assert len(widgets) >= 1
 
     def test_empty_string_args_skipped(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        assert trace_event_detail_widgets({"args": ""}) == []
+        ev = TraceEvent(name="test", input="")
+        assert trace_event_detail_widgets(ev) == []
 
     def test_empty_string_output_skipped(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        assert trace_event_detail_widgets({"output": ""}) == []
+        ev = TraceEvent(name="test", output="")
+        assert trace_event_detail_widgets(ev) == []
 
     def test_variant_key_skipped(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"input": {"variant": "ReadFile", "target_file": "a.py"}}
+        ev = TraceEvent(name="read_file", input={"variant": "ReadFile", "target_file": "a.py"})
         widgets = trace_event_detail_widgets(ev)
         texts = [str(w._Static__content) for w in widgets]
         combined = "\n".join(texts)
@@ -211,9 +227,10 @@ class TestTraceEventDetailWidgets:
         assert "variant" not in combined.lower().split("target_file")[0]
 
     def test_none_values_skipped(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"input": {"pattern": "foo", "glob": None, "type": None}}
+        ev = TraceEvent(name="grep", input={"pattern": "foo", "glob": None, "type": None})
         widgets = trace_event_detail_widgets(ev)
         texts = [str(w._Static__content) for w in widgets]
         combined = "\n".join(texts)
@@ -221,8 +238,8 @@ class TestTraceEventDetailWidgets:
         assert "null" not in combined
 
     def test_multiline_output_preserved(self):
-        from sfctl.widgets import trace_event_detail_widgets
         from sfctl.models import TraceEvent
+        from sfctl.widgets import trace_event_detail_widgets
 
         ev = TraceEvent(name="run", output="line1\nline2\nline3")
         widgets = trace_event_detail_widgets(ev)
@@ -232,31 +249,43 @@ class TestTraceEventDetailWidgets:
         assert "line2" in combined
 
     def test_byte_list_decoded(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"output": {"type": "Grep", "stdout": list(b"hello world"), "stderr": []}}
+        ev = TraceEvent(
+            name="grep",
+            output={"type": "Grep", "stdout": list(b"hello world"), "stderr": []},
+        )
         widgets = trace_event_detail_widgets(ev)
         texts = [str(w._Static__content) for w in widgets]
         combined = "\n".join(texts)
         assert "hello world" in combined
 
     def test_nested_output_unwrapped(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"output": {"type": "ReadFile", "FileContent": {"content": "file data"}}}
+        ev = TraceEvent(
+            name="read_file",
+            output={"type": "ReadFile", "FileContent": {"content": "file data"}},
+        )
         widgets = trace_event_detail_widgets(ev)
         texts = [str(w._Static__content) for w in widgets]
         combined = "\n".join(texts)
         assert "file data" in combined
 
     def test_output_for_prompt_preferred(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"output": {
-            "type": "Bash", "output": list(b"/usr/bin/ndisasm\n"),
-            "output_for_prompt": "exit: 0\n/usr/bin/ndisasm\n",
-            "exit_code": 0, "command": "which ndisasm",
-        }}
+        ev = TraceEvent(
+            name="bash",
+            output={
+                "type": "Bash", "output": list(b"/usr/bin/ndisasm\n"),
+                "output_for_prompt": "exit: 0\n/usr/bin/ndisasm\n",
+                "exit_code": 0, "command": "which ndisasm",
+            },
+        )
         widgets = trace_event_detail_widgets(ev)
         texts = [str(w._Static__content) for w in widgets]
         combined = "\n".join(texts)
@@ -264,9 +293,13 @@ class TestTraceEventDetailWidgets:
         assert "output_for_prompt" not in combined
 
     def test_false_booleans_skipped_in_input(self):
+        from sfctl.models import TraceEvent
         from sfctl.widgets import trace_event_detail_widgets
 
-        ev = {"input": {"command": "ls", "is_background": False, "variant": "Bash"}}
+        ev = TraceEvent(
+            name="bash",
+            input={"command": "ls", "is_background": False, "variant": "Bash"},
+        )
         widgets = trace_event_detail_widgets(ev)
         texts = [str(w._Static__content) for w in widgets]
         combined = "\n".join(texts)

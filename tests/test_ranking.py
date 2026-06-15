@@ -125,8 +125,8 @@ class TestPreviousRankingSummary:
     def test_empty_history(self):
         assert previous_ranking_summary([]) == ""
 
-    def test_history_as_dict(self):
-        history = {"preference_ranking": {"value": [{"id": "model_a"}, {"id": "model_b"}]}}
+    def test_single_entry_history(self):
+        history = [{"preference_ranking": {"value": [{"id": "model_a"}, {"id": "model_b"}]}}]
         result = previous_ranking_summary(history)
         assert "Overall:" in result
 
@@ -140,8 +140,8 @@ class TestPreviousModelRank:
     def test_empty_history(self):
         assert previous_model_rank([], 0) is None
 
-    def test_history_as_dict(self):
-        history = {"preference_ranking": {"value": [{"id": "model_a"}, {"id": "model_b"}]}}
+    def test_single_entry_history(self):
+        history = [{"preference_ranking": {"value": [{"id": "model_a"}, {"id": "model_b"}]}}]
         assert previous_model_rank(history, 0) == 0
         assert previous_model_rank(history, 1) == 1
         assert previous_model_rank(history, 2) is None

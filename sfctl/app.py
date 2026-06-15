@@ -161,9 +161,8 @@ class StarfleetApp(App):
             self.theme = config["theme"]
 
     def _get_history(self) -> list:
-        """Return history as a list, normalizing the single-entry dict case."""
-        h = self.data.get("history", [])
-        return [h] if not isinstance(h, list) else h
+        """Return the history list from the task data."""
+        return self.data.get("history", [])
 
     def nav_items(self) -> list[tuple[str, str]]:
         return ranking.nav_items(self.models)

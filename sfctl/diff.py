@@ -323,8 +323,6 @@ def parse_messages_trace(
     last_ts: int | None = None
 
     for item in items:
-        if not isinstance(item, dict):
-            continue
         ts = item.get("timestamp")
         if ts:
             if first_ts is None:
@@ -378,26 +376,26 @@ def parse_messages_trace(
 def parse_content(blob: dict) -> ParsedContent:
     items = blob.get("content", {}).get("items", [])
 
-    def find(t: str, title: str) -> dict | None:
-        return next((i for i in items if i.get("type") == t and i.get("title") == title), None)
+    def find(title: str) -> dict | None:
+        return next((i for i in items if i.get("title") == title), None)
 
-    repo_item = find("text", "Repository")
+    repo_item = find("Repository")
     repo_text = repo_item["text"].strip("* ") if repo_item else ""
-    prompt_item = find("message", "Current Prompt")
-    collection = find("collection", "Model Traces")
+    prompt_item = find("Current Prompt")
+    collection = find("Model Traces")
     model_items = collection.get("items", []) if collection else []
 
     models: list[ModelData] = []
     for m in model_items:
         trace = m["trace"]
         diff_text = m["diff"]["codeDiff"]
-        raw_messages = parse_json_field(trace.get("messages"))
+        raw_messages = parse_json_field(trace["messages"])
         summary, tool_events, messages, _ = parse_messages_trace(raw_messages)
         models.append(
             ModelData(
                 name=m.get("title", "Unknown"),
                 diff=diff_text,
-                trace_summary=trace.get("trace") or summary,
+                trace_summary=trace["trace"] or summary,
                 messages=messages,
                 tool_events=tool_events,
                 file_diffs=extract_file_diffs(diff_text),

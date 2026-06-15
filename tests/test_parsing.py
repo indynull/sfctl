@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+import pytest
 
 TASK_ID = "t-EXAMPLE001"
+SNAPSHOT_DIR = Path(__file__).parent.parent / "snapshots"
+COMPLEX_PATH = Path(__file__).parent / "fixtures" / "complex_lifecycle.json"
 
 
 class TestParseContent:
@@ -255,16 +260,18 @@ class TestTraceFormatting:
 
     def test_format_event_line_normal(self):
         from sfctl.formatting import format_event_line
+        from sfctl.models import TraceEvent
 
-        ev = {"name": "list_dir", "exit_code": "no_error", "wall_time": 0}
+        ev = TraceEvent(name="list_dir", exit_code="no_error", wall_time=0)
         line = format_event_line(ev)
         assert "list_dir" in line
         assert "no_error" not in line
 
     def test_format_event_line_error(self):
         from sfctl.formatting import format_event_line
+        from sfctl.models import TraceEvent
 
-        ev = {"name": "run_terminal_cmd", "exit_code": "error", "wall_time": 500}
+        ev = TraceEvent(name="run_terminal_cmd", exit_code="error", wall_time=500)
         line = format_event_line(ev)
         assert "error" in line
         assert "500ms" in line
@@ -458,23 +465,14 @@ class TestParseProposal:
         assert p.trace_summary == "x" * 300
         assert len(p.messages) == 3
 
-    def test_trace_data_legacy_format(self, proposal_data):
+    def test_trace_with_empty_list(self, proposal_data):
         from sfctl.proposal import parse_proposal
 
-        trace = {
-            "trace": "Summary of work done",
-            "messages": json.dumps([
-                {"role": "tool_call", "title": "list_dir", "timestamp": 1,
-                 "rawInput": {"variant": "ListDir", "target_directory": "."},
-                 "rawOutput": {"text": "file1\nfile2"}, "status": "completed"},
-                {"role": "assistant", "content": "done"},
-            ]),
-        }
+        trace = {"trace": []}
         p = parse_proposal(proposal_data["history"], trace)
-        assert p.trace_summary == "Summary of work done"
-        assert len(p.tool_events) == 1
-        assert p.tool_events[0].name == "list_dir"
-        assert len(p.messages) == 1
+        assert p.trace_summary == ""
+        assert p.tool_events == []
+        assert p.messages == []
 
     def test_no_trace(self, proposal_data):
         from sfctl.proposal import parse_proposal
@@ -556,3 +554,157 @@ class TestProposalRunElapsed:
         }}}}
         changes = proposal_all_changes(entry, entry)
         assert not any("Model run" in c for c in changes)
+
+
+def _snapshot_files():
+    """Collect parseable snapshot files for parametrized tests."""
+    if not SNAPSHOT_DIR.exists():
+        return []
+    files = []
+    for p in sorted(SNAPSHOT_DIR.glob("*.json")):
+        try:
+            data = json.loads(p.read_text())
+            if "task" in data:
+                files.append(p)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return files
+
+
+class TestSnapshotParsing:
+    """Validate that all real snapshots parse through the actual code paths."""
+
+    @pytest.mark.parametrize("path", _snapshot_files(), ids=lambda p: p.name)
+    def test_snapshot_parses(self, path):
+        from sfctl.diff import parse_content
+        from sfctl.history import feedback_for_entry, format_history_entry, has_meaningful_changes
+        from sfctl.proposal import (
+            format_proposal_meta,
+            has_proposal_changes,
+            parse_proposal,
+            proposal_all_changes,
+            proposal_field_summary,
+        )
+        from sfctl.task_types import TaskType, detect_task_type
+
+        data = json.loads(path.read_text())
+        tt = detect_task_type(data)
+        history = data["history"]
+        assert isinstance(history, list)
+        assert tt in (TaskType.CODE_REVIEW, TaskType.PROJECT_PROPOSAL)
+
+        if tt == TaskType.CODE_REVIEW:
+            parsed = parse_content(data["content"])
+            assert len(parsed.models) == 3
+            for m in parsed.models:
+                assert m.name.startswith("Model ")
+                assert len(m.tool_events) > 0
+                assert len(m.messages) > 0
+                assert m.trace_summary
+        else:
+            p = parse_proposal(history, data.get("trace"))
+            assert p.repo_url
+            assert p.trace_ref
+            assert p.model_id
+            meta = format_proposal_meta(history[-1], p.trace_elapsed_ms, p.model_id)
+            assert isinstance(meta, str)
+            summary = proposal_field_summary(history[-1])
+            assert isinstance(summary, list)
+
+        for i in range(len(history)):
+            entry = history[i]
+            prev = history[i - 1] if i > 0 else None
+            fb = feedback_for_entry(history, i)
+            assert isinstance(fb, list)
+            if tt == TaskType.CODE_REVIEW:
+                format_history_entry(entry, i)
+                if prev:
+                    has_meaningful_changes(prev, entry)
+            elif prev:
+                has_proposal_changes(prev, entry)
+                proposal_all_changes(prev, entry)
+
+    @pytest.mark.parametrize("path", _snapshot_files(), ids=lambda p: p.name)
+    def test_snapshot_history_is_list(self, path):
+        data = json.loads(path.read_text())
+        assert isinstance(data["history"], list)
+
+
+class TestComplexLifecycle:
+    """Tests using the complex_lifecycle fixture (SBQ, quarantine, multi-revision)."""
+
+    @pytest.fixture
+    def lifecycle_data(self):
+        return json.loads(COMPLEX_PATH.read_text())
+
+    def test_task_type(self, lifecycle_data):
+        from sfctl.task_types import TaskType, detect_task_type
+
+        assert detect_task_type(lifecycle_data) == TaskType.CODE_REVIEW
+
+    def test_history_length(self, lifecycle_data):
+        assert len(lifecycle_data["history"]) == 5
+
+    def test_review_levels(self, lifecycle_data):
+        levels = [e["reviewLevel"] for e in lifecycle_data["history"]]
+        assert levels == [0, 1, 0.5, 0.5, 1]
+
+    def test_parse_content(self, lifecycle_data):
+        from sfctl.diff import parse_content
+
+        parsed = parse_content(lifecycle_data["content"])
+        assert len(parsed.models) == 3
+        for m in parsed.models:
+            assert m.trace_summary
+            assert len(m.tool_events) > 0
+
+    def test_meaningful_changes_detected(self, lifecycle_data):
+        from sfctl.history import has_meaningful_changes
+
+        history = lifecycle_data["history"]
+        assert not has_meaningful_changes(history[0], history[1])
+        assert has_meaningful_changes(history[1], history[2])
+        assert has_meaningful_changes(history[2], history[3])
+
+    def test_feedback_accumulates(self, lifecycle_data):
+        from sfctl.history import feedback_for_entry
+
+        history = lifecycle_data["history"]
+        fb0 = feedback_for_entry(history, 0)
+        fb1 = feedback_for_entry(history, 1)
+        fb2 = feedback_for_entry(history, 2)
+        assert len(fb0) == 0
+        assert len(fb1) >= 1
+        assert len(fb2) >= 1
+        total_fb = len((history[-1].get("feedback") or {}).get("entries", []))
+        assert total_fb >= 5
+
+    def test_ranking_changes(self, lifecycle_data):
+        from sfctl.history import history_ranking_changes
+
+        history = lifecycle_data["history"]
+        changes_01 = history_ranking_changes(history[0], history[1])
+        assert len(changes_01) == 0
+        changes_12 = history_ranking_changes(history[1], history[2])
+        assert isinstance(changes_12, list)
+
+    def test_justification_changes(self, lifecycle_data):
+        from sfctl.history import history_justification_texts
+
+        history = lifecycle_data["history"]
+        result_01 = history_justification_texts(history[0], history[1])
+        assert result_01 is None
+        result_12 = history_justification_texts(history[1], history[2])
+        assert result_12 is not None
+        old, new = result_12
+        assert len(old) > 0
+        assert len(new) > 0
+
+    def test_format_history_entry(self, lifecycle_data):
+        from sfctl.history import format_history_entry
+
+        history = lifecycle_data["history"]
+        for i, entry in enumerate(history):
+            result = format_history_entry(entry, i)
+            assert "Entry" in result
+            assert "Level" in result

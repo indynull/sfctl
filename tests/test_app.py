@@ -813,13 +813,13 @@ class TestModelVariants:
             await pilot.pause()
 
     @pytest.mark.asyncio
-    async def test_history_not_list(self):
+    async def test_empty_history(self):
         from sfctl.app import StarfleetApp
 
         data = {
             "task": {"taskId": "t-x"},
             "content": {"content": {"items": []}},
-            "history": {"preference_ranking": {"value": []}},
+            "history": [],
             "feedback": {
                 "entries": [{"timestamp": 1, "message": "hi", "email": "a@b", "reviewLevel": 1}]
             },
@@ -834,7 +834,7 @@ class TestModelVariants:
         from sfctl.app import StarfleetApp
 
         data = _task_data("t-pr", models=[_model_item("Model A")])
-        data["history"] = {"preference_ranking": {"value": [{"id": "model_a"}]}}
+        data["history"] = [{"preference_ranking": {"value": [{"id": "model_a"}]}}]
         app = StarfleetApp("t-pr", data)
         async with app.run_test():
             pass  # just verifies scoreboard renders with prev rankings

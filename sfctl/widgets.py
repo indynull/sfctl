@@ -537,17 +537,12 @@ def _add_value_widgets(
         widgets.append(Static(f"{indent}[{key_style}]{key_str}[/] = {format_value(value)}"))
 
 
-def trace_event_detail_widgets(ev: object) -> list[Static]:
+def trace_event_detail_widgets(ev) -> list[Static]:
     """Build detail widgets for a trace event's input and output."""
     widgets: list[Static] = []
 
     # ---- Input ----
-    if hasattr(ev, "input"):
-        raw_input = ev.input
-    elif isinstance(ev, dict):
-        raw_input = ev.get("input", ev.get("args", ev.get("arguments", "")))
-    else:
-        raw_input = ""
+    raw_input = ev.input
     if raw_input:
         args = try_parse(raw_input)
         if isinstance(args, dict) and args:
@@ -571,12 +566,7 @@ def trace_event_detail_widgets(ev: object) -> list[Static]:
                     widgets.append(Static(f"  [bold]args:[/] [dim]{sanitize(text)}[/]"))
 
     # ---- Output ----
-    if hasattr(ev, "output"):
-        raw_output = ev.output
-    elif isinstance(ev, dict):
-        raw_output = ev.get("output", ev.get("result", ev.get("response", "")))
-    else:
-        raw_output = ""
+    raw_output = ev.output
     if raw_output:
         response = try_parse(raw_output)
         if isinstance(response, dict) and response:
