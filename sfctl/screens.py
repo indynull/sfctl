@@ -388,25 +388,17 @@ class EventSearchModal(FuzzyGrepModal):
         return Text.from_markup(format_event_line(ev)).plain
 
     @staticmethod
-    def _searchable_text(ev: object) -> str:
+    def _searchable_text(ev) -> str:
+        import dataclasses
         import json
 
         parts: list[str] = []
-        if hasattr(ev, "__dataclass_fields__"):
-            import dataclasses
-
-            for f in dataclasses.fields(ev):
-                val = getattr(ev, f.name)
-                if isinstance(val, dict):
-                    parts.append(json.dumps(val))
-                elif isinstance(val, str) and val:
-                    parts.append(val)
-        elif isinstance(ev, dict):
-            for val in ev.values():
-                if isinstance(val, dict):
-                    parts.append(json.dumps(val))
-                elif isinstance(val, str) and val:
-                    parts.append(val)
+        for f in dataclasses.fields(ev):
+            val = getattr(ev, f.name)
+            if isinstance(val, dict):
+                parts.append(json.dumps(val))
+            elif isinstance(val, str) and val:
+                parts.append(val)
         return "\n".join(parts)
 
     def _build_initial_options(self) -> list:

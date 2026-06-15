@@ -716,6 +716,7 @@ class TestSnapshotParsing:
     @pytest.mark.parametrize("path", _snapshot_files(), ids=lambda p: p.name)
     def test_snapshot_parses(self, path):
         from sfctl.diff import parse_content
+        from sfctl.formatting import format_event_line, group_events
         from sfctl.history import feedback_for_entry, format_history_entry, has_meaningful_changes
         from sfctl.proposal import (
             format_proposal_meta,
@@ -740,15 +741,26 @@ class TestSnapshotParsing:
                 assert len(m.tool_events) > 0
                 assert len(m.messages) > 0
                 assert m.trace_summary
+                groups = group_events(m.tool_events)
+                assert len(groups) > 0
+                for ev in m.tool_events[:5]:
+                    line = format_event_line(ev)
+                    assert isinstance(line, str)
         else:
             p = parse_proposal(history, data.get("trace"))
             assert p.repo_url
             assert p.trace_ref
             assert p.model_id
+            assert p.trace_elapsed_ms is not None
             meta = format_proposal_meta(history[-1], p.trace_elapsed_ms, p.model_id)
             assert isinstance(meta, str)
+            assert len(meta) > 0
             summary = proposal_field_summary(history[-1])
             assert isinstance(summary, list)
+            assert len(summary) > 0
+            if p.tool_events:
+                groups = group_events(p.tool_events)
+                assert len(groups) > 0
 
         for i in range(len(history)):
             entry = history[i]
