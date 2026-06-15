@@ -555,6 +555,80 @@ class TestProposalRunElapsed:
         changes = proposal_all_changes(entry, entry)
         assert not any("Model run" in c for c in changes)
 
+    def test_field_change_without_model_rerun(self):
+        from sfctl.proposal import has_proposal_changes, proposal_all_changes
+
+        base = {
+            "coding_question": {"rollouts": {"A": {"traceRef": "trace/same.json"}}},
+            "opus_solved": {"_sf_rich": True, "value": "partial"},
+            "opus_duration": {"_sf_rich": True, "value": "1h-2h"},
+        }
+        updated = {**base, "opus_solved": {"_sf_rich": True, "value": "full"}}
+        assert has_proposal_changes(base, updated)
+        changes = proposal_all_changes(base, updated)
+        assert any("Solved" in c for c in changes)
+        assert not any("Model run" in c for c in changes)
+
+    def test_rubric_change_detected(self):
+        from sfctl.proposal import has_proposal_changes, proposal_all_changes
+
+        prev = {"rubrics": {"items": [
+            {"nestedAnnotations": {"rubric": {"_sf_rich": True, "value": "R1"}}},
+        ]}}
+        curr = {"rubrics": {"items": [
+            {"nestedAnnotations": {"rubric": {"_sf_rich": True, "value": "R1"}}},
+            {"nestedAnnotations": {"rubric": {"_sf_rich": True, "value": "R2"}}},
+        ]}}
+        assert has_proposal_changes(prev, curr)
+        changes = proposal_all_changes(prev, curr)
+        assert any("Rubrics" in c for c in changes)
+
+    def test_nanosecond_timestamp_parsed(self):
+        from sfctl.proposal import _parse_iso
+
+        dt = _parse_iso("2026-05-01T04:49:44.858031474Z")
+        assert dt is not None
+        assert dt.year == 2026
+        assert dt.month == 5
+
+    def test_elapsed_ms_from_nano_timestamps(self):
+        from sfctl.proposal import _proposal_run_elapsed_ms
+
+        entry = {"coding_question": {"rollouts": {"A": {
+            "finalSessionSummary": {
+                "created_at": "2026-06-11T17:00:22.164411124Z",
+                "last_active_at": "2026-06-11T17:22:05.390957433Z",
+            },
+        }}}}
+        ms = _proposal_run_elapsed_ms(entry)
+        assert ms is not None
+        assert 1200000 < ms < 1400000  # ~21.7 minutes
+
+
+class TestEditActions:
+    def test_edit_action_detected_in_history(self):
+        history = [
+            {"reviewLevel": 0, "preference_ranking": {"value": [{"id": "model_a"}]}},
+            {"reviewLevel": 1, "isEditAction": True,
+             "preference_ranking": {"value": [{"id": "model_a"}]}},
+        ]
+        assert history[1].get("isEditAction") is True
+        assert history[1]["reviewLevel"] == 1
+
+    def test_half_level_review(self):
+        history = [
+            {"reviewLevel": 0, "preference_ranking": {"value": [{"id": "model_a"}]}},
+            {"reviewLevel": 0.5, "preference_ranking": {"value": [{"id": "model_a"}]}},
+        ]
+        assert history[1]["reviewLevel"] == 0.5
+
+    def test_quarantine_level(self):
+        history = [
+            {"reviewLevel": 0, "preference_ranking": {"value": []}},
+            {"reviewLevel": 13, "preference_ranking": {"value": []}},
+        ]
+        assert history[1]["reviewLevel"] == 13
+
 
 def _snapshot_files():
     """Collect parseable snapshot files for parametrized tests."""

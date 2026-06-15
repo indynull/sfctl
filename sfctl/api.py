@@ -174,11 +174,8 @@ async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
             result["trace"] = await _fetch_trace(client, api_base, trace_ref)
 
     TaskResponse.model_validate(task_resp)
-    if isinstance(history, list):
-        for h in history:
-            HistoryEntry.model_validate(h)
-    else:
-        HistoryEntry.model_validate(history)
+    for h in history:
+        HistoryEntry.model_validate(h)
     FeedbackResponse.model_validate(feedback)
     ContentResponse.model_validate(content)
 

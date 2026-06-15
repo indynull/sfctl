@@ -59,30 +59,7 @@ class HistoryEntry(BaseConfig):
     feedback: FeedbackResponse | None = None
     isEditAction: bool = False
 
-    def ranking_value(self, key: str) -> list[RankingItem]:
-        """Return the ranking list for a given key, or empty list."""
-        wrapper = getattr(self, key, None)
-        if not isinstance(wrapper, ValueWrapper) or not isinstance(wrapper.value, list):
-            return []
-        return wrapper.value
 
-    def justification_text(self) -> str:
-        """Extract the justification string."""
-        if not self.justification or not isinstance(self.justification.value, str):
-            return ""
-        return self.justification.value
-
-    def confidence_text(self) -> str:
-        """Extract the confidence string."""
-        if not self.confidence or not isinstance(self.confidence.value, str):
-            return ""
-        return self.confidence.value
-
-    def feedback_entries(self) -> list[dict]:
-        """Return feedback entries as dicts."""
-        if not self.feedback:
-            return []
-        return [e.model_dump() for e in self.feedback.entries]
 
 
 class ContentItem(BaseConfig):

@@ -248,8 +248,8 @@ class TestFetchDataAsync:
             monkeypatch.undo()
 
     @pytest.mark.asyncio
-    async def test_history_single_dict(self, fixture_data):
-        single_history = fixture_data["history"][0]
+    async def test_history_single_entry_list(self, fixture_data):
+        single_history = [fixture_data["history"][0]]
 
         async def handler(request):
             url = str(request.url)
@@ -275,7 +275,8 @@ class TestFetchDataAsync:
         monkeypatch.setattr(api_mod.httpx, "AsyncClient", PatchedClient)
         try:
             result = await api_mod._fetch_data_async(TASK_ID, {})
-            assert isinstance(result["history"], dict)
+            assert isinstance(result["history"], list)
+            assert len(result["history"]) == 1
         finally:
             monkeypatch.undo()
 
