@@ -58,7 +58,7 @@ def parse_proposal(history: list[dict], trace: dict | None = None) -> ProposalDa
     cq = entry.get("coding_question", {})
 
     sessions = cq.get("sessions", [])
-    repo_url = sessions[0].get("githubLink", "") if sessions else ""
+    repo_url = sessions[-1].get("githubLink", "") if sessions else ""
 
     rollout = cq.get("rollouts", {}).get("A", {})
 
