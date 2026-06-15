@@ -58,11 +58,12 @@ from sfctl.ids import (
 )
 from sfctl.models import ModelData, ModelScores, ParsedContent, ProposalData
 from sfctl.proposal import (
-    format_proposal_entry,
+    format_proposal_meta,
     has_proposal_changes,
     parse_proposal,
     proposal_all_changes,
-    proposal_initial_values,
+    proposal_field_summary,
+    solved_markup,
 )
 from sfctl.scoring import ReviewState
 from sfctl.screens import HelpModal
@@ -445,28 +446,16 @@ class StarfleetApp(App):
 
         overview_pane = TabPane("Current", id=ids.TAB_CURRENT)
         await tabs.add_pane(overview_pane)
+        history = self._get_history()
+        latest = history[-1] if history else {}
         ow: list = []
         if p.repo_url:
             ow.append(Link(p.repo_url, url=p.repo_url))
         if p.repo_description:
             ow.append(Static(f"[dim]{p.repo_description}[/dim]"))
-        meta_parts = []
-        if p.domain:
-            meta_parts.append(f"[bold]Domain:[/bold] {p.domain}")
-        if p.duration:
-            duration_str = p.duration
-            if p.trace_elapsed_ms:
-                duration_str += f" (actual: {format_duration(p.trace_elapsed_ms)})"
-            meta_parts.append(f"[bold]Duration:[/bold] {duration_str}")
-        elif p.trace_elapsed_ms:
-            meta_parts.append(f"[bold]Duration:[/bold] {format_duration(p.trace_elapsed_ms)}")
-        if p.solved:
-            color = {"full": "green", "partial": "yellow", "no": "red"}.get(p.solved, "white")
-            meta_parts.append(f"[bold]Solved:[/bold] [{color}]{p.solved}[/{color}]")
-        if p.model_id:
-            meta_parts.append(f"[bold]Model:[/bold] [dim]{p.model_id}[/dim]")
-        if meta_parts:
-            ow.append(Static("  |  ".join(meta_parts)))
+        meta = format_proposal_meta(latest, elapsed_ms=p.trace_elapsed_ms, model_id=p.model_id)
+        if meta:
+            ow.append(Static(meta))
         if p.familiarity:
             ow.append(Static("[bold]Understanding:[/bold]"))
             ow.append(Markdown(p.familiarity))
@@ -524,7 +513,7 @@ class StarfleetApp(App):
 
             widgets: list = []
             if is_proposal:
-                header = format_proposal_entry(entry)
+                header = format_proposal_meta(entry)
                 if header:
                     widgets.append(Static(header))
             else:
@@ -539,7 +528,7 @@ class StarfleetApp(App):
 
             diff_statics: list[Static] = []
             if is_proposal and prev is None:
-                initial = proposal_initial_values(entry)
+                initial = proposal_field_summary(entry)
                 if initial:
                     diff_statics.append(Static("\n".join(initial)))
             elif changed and prev:
@@ -838,8 +827,7 @@ class StarfleetApp(App):
             p = self.proposal
             parts = []
             if p.solved:
-                color = {"full": "green", "partial": "yellow", "no": "red"}.get(p.solved, "white")
-                parts.append(f"[{color}]{p.solved}[/{color}]")
+                parts.append(solved_markup(p.solved))
             if p.duration:
                 parts.append(f"[dim]{p.duration}[/dim]")
             if p.trace_elapsed_ms:

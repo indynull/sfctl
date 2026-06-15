@@ -206,24 +206,41 @@ def _proposal_run_elapsed_ms(entry: dict) -> int | None:
     return None
 
 
-def format_proposal_entry(entry: dict) -> str:
-    """Format a proposal history entry's metadata as Rich markup."""
+def solved_markup(solved: str) -> str:
+    """Return Rich markup for a solved status value with appropriate color."""
+    color = {"full": "green", "partial": "yellow", "no": "red"}.get(solved, "white")
+    return f"[{color}]{solved}[/{color}]"
+
+
+def format_proposal_meta(
+    entry: dict,
+    elapsed_ms: int | None = None,
+    model_id: str = "",
+) -> str:
+    """Format the meta-bar for a proposal entry (domain, duration, solved, model)."""
     parts: list[str] = []
-    ms = _proposal_run_elapsed_ms(entry)
-    if ms:
-        parts.append(f"[bold]Model run:[/bold] {format_duration(ms)}")
+    domain = sf_value(entry.get("domain"))
+    if domain:
+        parts.append(f"[bold]Domain:[/bold] {domain}")
+    duration = sf_value(entry.get("opus_duration"))
+    ms = elapsed_ms if elapsed_ms is not None else _proposal_run_elapsed_ms(entry)
+    if duration:
+        dur_str = duration
+        if ms:
+            dur_str += f" (actual: {format_duration(ms)})"
+        parts.append(f"[bold]Duration:[/bold] {dur_str}")
+    elif ms:
+        parts.append(f"[bold]Duration:[/bold] {format_duration(ms)}")
     solved = sf_value(entry.get("opus_solved"))
     if solved:
-        color = {"full": "green", "partial": "yellow", "no": "red"}.get(solved, "white")
-        parts.append(f"[bold]Solved:[/bold] [{color}]{solved}[/{color}]")
-    duration = sf_value(entry.get("opus_duration"))
-    if duration:
-        parts.append(f"[bold]Duration:[/bold] {duration}")
+        parts.append(f"[bold]Solved:[/bold] {solved_markup(solved)}")
+    if model_id:
+        parts.append(f"[bold]Model:[/bold] [dim]{model_id}[/dim]")
     return "  |  ".join(parts) if parts else ""
 
 
-def proposal_initial_values(entry: dict) -> list[str]:
-    """Return Rich-markup lines showing the initial field values of a proposal entry."""
+def proposal_field_summary(entry: dict) -> list[str]:
+    """Return Rich-markup lines summarising all proposal fields for a history entry."""
     lines: list[str] = []
     url = _proposal_repo_url(entry)
     if url:
