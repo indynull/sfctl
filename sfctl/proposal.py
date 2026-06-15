@@ -49,9 +49,7 @@ def _parse_proposal_trace(
 def parse_proposal(history: list[dict], trace: dict | None = None) -> ProposalData:
     """Parse a ProposalData from the latest history entry.
 
-    *trace* is the optional fetched trace JSON.  Handles both the real
-    proposal format (``{"trace": [list of message dicts]}``) and the legacy
-    code-review format (``{"trace": "str", "toolEvents": "json", ...}``).
+    *trace* is the optional fetched trace JSON (``{"trace": [list of message dicts]}``).
     """
     if not history:
         return ProposalData()

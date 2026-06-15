@@ -123,6 +123,8 @@ def _proposal_history_entry(
                         "current_model_id": "test-model-v1",
                         "agent_name": "grok-build",
                         "num_messages": 2,
+                        "created_at": "2026-05-28T14:11:00.000000000Z",
+                        "last_active_at": "2026-05-28T14:25:30.000000000Z",
                     },
                 }
             },

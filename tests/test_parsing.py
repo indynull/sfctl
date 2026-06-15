@@ -438,6 +438,13 @@ class TestParseProposal:
         p = parse_proposal(proposal_data["history"])
         assert p.trace_ref == "coding-question/worker/session/trace.json"
 
+    def test_trace_elapsed_ms(self, proposal_data):
+        from sfctl.proposal import parse_proposal
+
+        p = parse_proposal(proposal_data["history"])
+        assert p.trace_elapsed_ms is not None
+        assert 800000 < p.trace_elapsed_ms < 900000  # ~14.5 minutes
+
     def test_trace_data_real_format(self, proposal_data):
         from sfctl.proposal import parse_proposal
 
@@ -488,6 +495,64 @@ class TestParseProposal:
         p = parse_proposal([])
         assert p.repo_url == ""
         assert p.rubrics == []
+
+
+class TestSolvedMarkup:
+    def test_colors(self):
+        from sfctl.proposal import solved_markup
+
+        assert "[green]full[/green]" == solved_markup("full")
+        assert "[yellow]partial[/yellow]" == solved_markup("partial")
+        assert "[red]no[/red]" == solved_markup("no")
+        assert "[white]unknown[/white]" == solved_markup("unknown")
+
+
+class TestFormatProposalMeta:
+    def test_all_fields(self, proposal_data):
+        from sfctl.proposal import format_proposal_meta
+
+        entry = proposal_data["history"][-1]
+        meta = format_proposal_meta(entry, elapsed_ms=870000, model_id="test-model-v1")
+        assert "Domain" in meta
+        assert "Duration" in meta
+        assert "14.5m" in meta
+        assert "Solved" in meta
+        assert "partial" in meta
+        assert "Model" in meta
+        assert "test-model-v1" in meta
+
+    def test_no_elapsed(self, proposal_data):
+        from sfctl.proposal import format_proposal_meta
+
+        entry = proposal_data["history"][-1]
+        meta = format_proposal_meta(entry)
+        assert "Domain" in meta
+        assert "Duration" in meta
+
+    def test_empty_entry(self):
+        from sfctl.proposal import format_proposal_meta
+
+        assert format_proposal_meta({}) == ""
+
+
+class TestProposalFieldSummary:
+    def test_includes_all_fields(self, proposal_data):
+        from sfctl.proposal import proposal_field_summary
+
+        lines = proposal_field_summary(proposal_data["history"][-1])
+        combined = "\n".join(lines)
+        assert "Repo URL" in combined
+        assert "Repo Description" in combined
+        assert "Domain" in combined
+        assert "Duration" in combined
+        assert "Solved" in combined
+        assert "Rubrics" in combined
+        assert "Issues" in combined
+
+    def test_empty_entry(self):
+        from sfctl.proposal import proposal_field_summary
+
+        assert proposal_field_summary({}) == []
 
 
 class TestProposalRubricChanges:
