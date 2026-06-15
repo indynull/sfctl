@@ -222,6 +222,27 @@ def format_proposal_entry(entry: dict) -> str:
     return "  |  ".join(parts) if parts else ""
 
 
+def proposal_initial_values(entry: dict) -> list[str]:
+    """Return Rich-markup lines showing the initial field values of a proposal entry."""
+    lines: list[str] = []
+    url = _proposal_repo_url(entry)
+    if url:
+        lines.append(f"[bold]Repo URL:[/bold] {sanitize(url)}")
+    for key, label in _PROPOSAL_SF_FIELDS:
+        val = sf_value(entry.get(key))
+        if val:
+            lines.append(f"[bold]{label}:[/bold] {sanitize(val, 80)}")
+    issues = _proposal_issues_value(entry)
+    if issues:
+        lines.append(f"[bold]Issues:[/bold] {sanitize(issues, 80)}")
+    rubrics = extract_rubrics(entry.get("rubrics"))
+    if rubrics:
+        lines.append(f"[bold]Rubrics ({len(rubrics)}):[/bold]")
+        for i, r in enumerate(rubrics, 1):
+            lines.append(f"  {i}. {sanitize(r)}")
+    return lines
+
+
 def has_proposal_changes(prev: dict, curr: dict) -> bool:
     """Check if any Current-tab field changed between two proposal history entries."""
     if _proposal_trace_ref(prev) != _proposal_trace_ref(curr):

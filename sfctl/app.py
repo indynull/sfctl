@@ -62,6 +62,7 @@ from sfctl.proposal import (
     has_proposal_changes,
     parse_proposal,
     proposal_all_changes,
+    proposal_initial_values,
 )
 from sfctl.scoring import ReviewState
 from sfctl.screens import HelpModal
@@ -537,7 +538,11 @@ class StarfleetApp(App):
                 )
 
             diff_statics: list[Static] = []
-            if changed and prev:
+            if is_proposal and prev is None:
+                initial = proposal_initial_values(entry)
+                if initial:
+                    diff_statics.append(Static("\n".join(initial)))
+            elif changed and prev:
                 if is_proposal:
                     field_changes = proposal_all_changes(prev, entry)
                     if field_changes:
