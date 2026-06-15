@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sfctl.diff import extract_file_diffs, parse_json_field, parse_messages_trace
-from sfctl.formatting import sanitize
+from sfctl.formatting import format_duration, sanitize
 from sfctl.models import ProposalData, TraceEvent
 
 
@@ -106,6 +108,8 @@ def parse_proposal(history: list[dict], trace: dict | None = None) -> ProposalDa
     model_id = session.get("current_model_id", "")
 
     trace_summary, tool_events, messages, trace_elapsed_ms = _parse_proposal_trace(trace)
+    if not trace_elapsed_ms:
+        trace_elapsed_ms = _proposal_run_elapsed_ms(entry)
 
     return ProposalData(
         repo_url=repo_url,
@@ -169,8 +173,44 @@ def _proposal_repo_url(entry: dict) -> str:
     return sessions[0].get("githubLink", "") if sessions else ""
 
 
+def _proposal_rollout(entry: dict) -> dict:
+    """Extract the rollout dict from a history entry."""
+    cq = entry.get("coding_question", {})
+    return cq.get("rollouts", {}).get("A") or cq.get("rolloutA") or cq.get("rollout") or {}
+
+
+def _proposal_trace_ref(entry: dict) -> str:
+    """Extract the traceRef from a history entry."""
+    return _proposal_rollout(entry).get("traceRef", "")
+
+
+def _parse_iso(ts: str) -> datetime | None:
+    """Parse an ISO-8601 timestamp, truncating nanoseconds to microseconds."""
+    if not ts:
+        return None
+    try:
+        if len(ts) > 27 and ts.endswith("Z"):
+            ts = ts[:26] + "Z"
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _proposal_run_elapsed_ms(entry: dict) -> int | None:
+    """Compute model run duration in ms from finalSessionSummary timestamps."""
+    rollout = _proposal_rollout(entry)
+    session = rollout.get("finalSessionSummary") or {}
+    created = _parse_iso(session.get("created_at", ""))
+    updated = _parse_iso(session.get("last_active_at") or session.get("updated_at", ""))
+    if created and updated and updated > created:
+        return int((updated - created).total_seconds() * 1000)
+    return None
+
+
 def has_proposal_changes(prev: dict, curr: dict) -> bool:
     """Check if any Current-tab field changed between two proposal history entries."""
+    if _proposal_trace_ref(prev) != _proposal_trace_ref(curr):
+        return True
     if extract_rubrics(prev.get("rubrics")) != extract_rubrics(curr.get("rubrics")):
         return True
     for key, _ in _PROPOSAL_SF_FIELDS:
@@ -184,6 +224,12 @@ def has_proposal_changes(prev: dict, curr: dict) -> bool:
 def proposal_all_changes(prev: dict, curr: dict) -> list[str]:
     """Return Rich-markup lines for all changed fields between two proposal entries."""
     lines: list[str] = []
+    if _proposal_trace_ref(prev) != _proposal_trace_ref(curr):
+        old_ms = _proposal_run_elapsed_ms(prev)
+        new_ms = _proposal_run_elapsed_ms(curr)
+        old_dur = format_duration(old_ms) if old_ms else "?"
+        new_dur = format_duration(new_ms) if new_ms else "?"
+        lines.append(f"[bold]Model run:[/bold] {old_dur} → {new_dur}")
     prev_url = _proposal_repo_url(prev)
     curr_url = _proposal_repo_url(curr)
     if prev_url != curr_url:

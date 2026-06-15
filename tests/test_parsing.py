@@ -517,3 +517,42 @@ class TestProposalRubricChanges:
         from sfctl.proposal import proposal_rubric_changes
 
         assert proposal_rubric_changes(["A", "B"], ["A", "B"]) == []
+
+
+class TestProposalRunElapsed:
+    def test_model_run_change_detected(self):
+        from sfctl.proposal import has_proposal_changes, proposal_all_changes
+
+        prev = {"coding_question": {"rollouts": {"A": {
+            "traceRef": "trace/run1.json",
+            "finalSessionSummary": {
+                "created_at": "2026-06-11T17:00:00Z",
+                "updated_at": "2026-06-11T17:20:00Z",
+            },
+        }}}}
+        curr = {"coding_question": {"rollouts": {"A": {
+            "traceRef": "trace/run2.json",
+            "finalSessionSummary": {
+                "created_at": "2026-06-12T10:00:00Z",
+                "updated_at": "2026-06-12T10:40:00Z",
+            },
+        }}}}
+        assert has_proposal_changes(prev, curr)
+        changes = proposal_all_changes(prev, curr)
+        combined = "\n".join(changes)
+        assert "Model run" in combined
+        assert "20.0m" in combined
+        assert "40.0m" in combined
+
+    def test_same_trace_ref_no_run_change(self):
+        from sfctl.proposal import proposal_all_changes
+
+        entry = {"coding_question": {"rollouts": {"A": {
+            "traceRef": "trace/same.json",
+            "finalSessionSummary": {
+                "created_at": "2026-06-11T17:00:00Z",
+                "updated_at": "2026-06-11T17:20:00Z",
+            },
+        }}}}
+        changes = proposal_all_changes(entry, entry)
+        assert not any("Model run" in c for c in changes)
