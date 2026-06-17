@@ -532,9 +532,20 @@ class StarfleetApp(App):
                     diff_statics.append(Static("\n".join(initial)))
             elif changed and prev:
                 if is_proposal:
-                    field_changes = proposal_all_changes(prev, entry)
-                    if field_changes:
-                        diff_statics.append(Static("\n".join(field_changes)))
+                    for label, old_t, new_t in proposal_all_changes(prev, entry):
+                        if old_t is None and new_t is None:
+                            diff_statics.append(Static(label))
+                        elif old_t and new_t:
+                            from redlines import Redlines
+
+                            diff_statics.append(Static(f"[bold]{label}:[/bold]"))
+                            diff_statics.append(Static(Redlines(old_t, new_t).output_rich))
+                        elif new_t:
+                            diff_statics.append(Static(f"[bold]{label}:[/bold]"))
+                            diff_statics.append(Static(f"[green]{sanitize(new_t)}[/green]"))
+                        else:
+                            diff_statics.append(Static(f"[bold]{label}:[/bold]"))
+                            diff_statics.append(Static(f"[red]{sanitize(old_t or '')}[/red]"))
                 else:
                     rc = history_ranking_changes(prev, entry)
                     jt = history_justification_texts(prev, entry)

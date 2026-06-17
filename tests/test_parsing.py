@@ -659,7 +659,8 @@ class TestProposalRunElapsed:
         }}}}
         assert has_proposal_changes(prev, curr)
         changes = proposal_all_changes(prev, curr)
-        combined = "\n".join(changes)
+        labels = [label for label, _, _ in changes]
+        combined = "\n".join(labels)
         assert "Model run" in combined
         assert "20.0m" in combined
         assert "40.0m" in combined
@@ -675,7 +676,7 @@ class TestProposalRunElapsed:
             },
         }}}}
         changes = proposal_all_changes(entry, entry)
-        assert not any("Model run" in c for c in changes)
+        assert not any("Model run" in label for label, _, _ in changes)
 
     def test_field_change_without_model_rerun(self):
         from sfctl.proposal import has_proposal_changes, proposal_all_changes
@@ -688,8 +689,8 @@ class TestProposalRunElapsed:
         updated = {**base, "opus_solved": {"_sf_rich": True, "value": "full"}}
         assert has_proposal_changes(base, updated)
         changes = proposal_all_changes(base, updated)
-        assert any("Solved" in c for c in changes)
-        assert not any("Model run" in c for c in changes)
+        assert any("Solved" in label for label, _, _ in changes)
+        assert not any("Model run" in label for label, _, _ in changes)
 
     def test_rubric_change_detected(self):
         from sfctl.proposal import has_proposal_changes, proposal_all_changes
@@ -703,7 +704,7 @@ class TestProposalRunElapsed:
         ]}}
         assert has_proposal_changes(prev, curr)
         changes = proposal_all_changes(prev, curr)
-        assert any("Rubrics" in c for c in changes)
+        assert any("Rubrics" in label for label, _, _ in changes)
 
     def test_nanosecond_timestamp_parsed(self):
         from sfctl.proposal import _parse_iso
