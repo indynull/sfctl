@@ -35,6 +35,11 @@ COMMENTS_MODAL = "comments-modal"
 COMMENTS_PREVIEW = "comments-preview"
 COMMENTS_EDITOR = "comments-editor"
 
+ANALYSIS = "analysis"
+TABS_ANALYSIS = "tabs-analysis"
+TAB_ANALYSIS_SIGNALS = "tab-analysis-signals"
+TAB_ANALYSIS_HISTORY = "tab-analysis-history"
+
 SPLIT_HANDLE = "split-handle"
 CONTENT_AREA = "content-area"
 

@@ -465,10 +465,56 @@ class HelpModal(ModalScreen):
                 yield Static(self._content)
 
 
+class AnalysisModal(ModalScreen):
+    """Modal overlay showing analysis signals for the current task."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+    ]
+
+    def __init__(self, analysis):
+        super().__init__()
+        self._analysis = analysis
+
+    def compose(self) -> ComposeResult:
+        a = self._analysis
+        action_colors = {"no_signal": "green", "send_back": "yellow", "quarantine": "red"}
+        action_fg = {"no_signal": "white", "send_back": "black", "quarantine": "white"}
+        bg = action_colors.get(a.action, "white")
+        fg = action_fg.get(a.action, "white")
+        action_label = a.action.replace("_", " ").upper()
+
+        parts: list[str] = [f"[bold {fg} on {bg}] {action_label} [/]"]
+        if a.summary:
+            parts.append(f"[dim]Trajectory: {a.summary}[/dim]")
+
+        groups = [
+            ("quarantine", "red", "Q"),
+            ("fail", "red", "x"),
+            ("warn", "yellow", "!"),
+        ]
+        for severity, color, icon in groups:
+            signals = [s for s in a.signals if s.severity == severity]
+            if not signals:
+                continue
+            label = {"quarantine": "Quarantine", "fail": "Failed", "warn": "Warnings"}[severity]
+            parts.append(f"\n[bold {color}]{label}[/]")
+            for s in signals:
+                lines = s.description.split("\n")
+                header = lines[0].replace("[", "(").replace("]", ")")
+                parts.append(f"  [{color}]{icon}[/] [bold]{s.name}[/]: {header}")
+                for line in lines[1:]:
+                    safe = line.replace("[", "(").replace("]", ")")
+                    parts.append(f"    [dim]{safe}[/dim]")
+
+        with Container(id="analysis-modal"):
+            yield Label("Analysis", classes="section-title")
+            with ScrollableContainer():
+                yield Static("\n".join(parts))
+
+
 def strip_markup(text: str) -> str:
     """Remove Rich markup tags from a string."""
-    from rich.text import Text
-
     return Text.from_markup(text).plain
 
 

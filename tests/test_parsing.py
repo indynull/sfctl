@@ -416,8 +416,10 @@ class TestParseProposal:
         from sfctl.proposal import parse_proposal
 
         p = parse_proposal(proposal_data["history"])
-        assert len(p.bash_history) == 2
-        assert p.bash_history[1]["command"] == "uv run pytest"
+        assert len(p.setup_commands) == 1
+        assert p.setup_commands[0]["command"] == "uv sync"
+        assert len(p.bash_history) == 1
+        assert p.bash_history[0]["command"] == "uv run pytest"
 
     def test_issues(self, proposal_data):
         from sfctl.proposal import parse_proposal

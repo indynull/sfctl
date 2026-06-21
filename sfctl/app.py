@@ -56,7 +56,7 @@ from sfctl.ids import (
     tab_response_id,
     tab_trace_id,
 )
-from sfctl.models import ModelData, ModelScores, ParsedContent, ProposalData
+from sfctl.models import AnalysisResult, ModelData, ModelScores, ParsedContent, ProposalData
 from sfctl.proposal import (
     format_proposal_meta,
     has_proposal_changes,
@@ -97,6 +97,7 @@ class StarfleetApp(App):
         Binding("1", "go_model(0)", "A", show=True),
         Binding("2", "go_model(1)", "B", show=True),
         Binding("3", "go_model(2)", "C", show=True),
+        Binding("a", "show_analysis", "Analysis", show=True),
         Binding("m", "go_model_proposal", "Model", show=True),
         Binding("+", "vote_up", f"{ARROW_UP} Up", show=True),
         Binding("-", "vote_down", f"{ARROW_DOWN} Down", show=True),
@@ -111,21 +112,28 @@ class StarfleetApp(App):
         Binding("ctrl+n", "edit_comments", "Edit Notes", show=False),
         Binding("r", "refresh_data", "Refresh", show=False),
         Binding("ctrl+r", "reset_local", "Reset", show=False),
+        Binding("@", "toggle_emails", "Emails", show=False),
         Binding("?", "help", "Help", show=True),
         Binding("q", "quit", "Quit", show=True),
         Binding("tab", "next_tab", "Next Tab", show=False, priority=True),
         Binding("shift+tab", "prev_tab", "Prev Tab", show=False, priority=True),
     ]
 
-    def __init__(self, task_arg: str, data: dict, cookies: dict[str, str] | None = None):
+    def __init__(
+        self,
+        task_arg: str,
+        data: dict,
+        cookies: dict[str, str] | None = None,
+        analysis: AnalysisResult | None = None,
+    ):
         super().__init__()
         self.task_arg = task_arg
         self.data = data
         self.cookies = cookies
+        self.analysis = analysis
         self.task_type = detect_task_type(data)
         self.task_id = data.get("task", {}).get("taskId") or task_arg
 
-        # Type-specific parsing
         self.proposal: ProposalData | None = None
         if self.task_type == TaskType.PROJECT_PROPOSAL:
             self.proposal = parse_proposal(self._get_history(), data.get("trace"))
@@ -148,13 +156,9 @@ class StarfleetApp(App):
         self._voting = VotingController(self)
         self._search = SearchController(self)
         self._editor = EditorController(self)
+        self._show_emails = False
 
-        task = data.get("task", {})
-        email = (task.get("actionHistory") or [{}])[0].get("userId", "")
-        if email and email != EM_DASH:
-            self.sub_title = f"Task {self.task_id}  |  {email}"
-        else:
-            self.sub_title = f"Task {self.task_id}"
+        self.sub_title = f"Task {self.task_id}"
 
         config = load_config()
         if "theme" in config:
@@ -203,30 +207,36 @@ class StarfleetApp(App):
 
         if self.task_type == TaskType.UNKNOWN:
             with (
-                ScrollableContainer(id=ids.CONTENT_AREA),
-                ScrollableContainer(id=ids.OVERVIEW),
+                Vertical(id=ids.CONTENT_AREA),
+                ContentSwitcher(initial=ids.OVERVIEW, id=ids.MAIN_SWITCHER),
             ):
-                yield Static(
-                    "[bold]Unsupported task type[/bold]\n\n"
-                    "This task does not match a known layout. "
-                    "Only the raw overview and history are available.",
-                    classes="status",
-                )
+                with ScrollableContainer(id=ids.OVERVIEW):
+                    yield Static(
+                        "[bold]Unsupported task type[/bold]\n\n"
+                        "This task does not match a known layout. "
+                        "Only the raw overview and history are available.",
+                        classes="status",
+                    )
+                with ScrollableContainer(id=ids.ANALYSIS):
+                    pass
             return
 
         if self.task_type == TaskType.PROJECT_PROPOSAL:
             mid = model_id(0)
+            initial = ids.ANALYSIS if self.analysis else ids.OVERVIEW
             with (
                 Vertical(id=ids.CONTENT_AREA),
-                ContentSwitcher(initial=ids.OVERVIEW, id=ids.MAIN_SWITCHER),
+                ContentSwitcher(initial=initial, id=ids.MAIN_SWITCHER),
             ):
                 with ScrollableContainer(id=mid):
                     yield Static("[bold]Model[/bold]", classes="view-header", id=model_header_id(mid))
                 with ScrollableContainer(id=ids.OVERVIEW):
                     pass
+                with ScrollableContainer(id=ids.ANALYSIS):
+                    pass
             return
 
-        initial = ids.OVERVIEW
+        initial = ids.ANALYSIS if self.analysis else ids.OVERVIEW
         with (
             Vertical(id=ids.CONTENT_AREA),
             ContentSwitcher(initial=initial, id=ids.MAIN_SWITCHER),
@@ -241,6 +251,8 @@ class StarfleetApp(App):
                         )
 
                 with ScrollableContainer(id=ids.OVERVIEW):
+                    pass
+                with ScrollableContainer(id=ids.ANALYSIS):
                     pass
 
     @staticmethod
@@ -469,14 +481,61 @@ class StarfleetApp(App):
             ow.append(Static("[bold]Issues:[/bold]"))
             ow.append(Markdown(p.issues))
             for comment in p.issue_comments:
-                author = comment.get("createdBy", {}).get("email", "unknown")
+                email = comment.get("createdBy", {}).get("email", "unknown")
+                author = email if self._show_emails else "reviewer"
                 ts = format_timestamp(comment.get("createdAt", ""))
-                ow.append(
-                    Static(f"\n[dim]{author} ({ts}):[/dim]\n{comment.get('content', '')}")
-                )
+                w = Static(f"\n[dim]{author} ({ts}):[/dim]\n{comment.get('content', '')}")
+                w._comment_email = email
+                w._comment_ts = ts
+                w._comment_content = comment.get("content", "")
+                w.add_class("comment-meta")
+                ow.append(w)
         await overview_pane.mount_all(ow)
 
         await self._populate_history_tabs(tabs, self._get_history(), tab_offset=20)
+
+    async def _populate_analysis(self) -> None:
+        """Lazily compose the analysis view."""
+        if not self.analysis:
+            return
+        container = self.query_one(f"#{ids.ANALYSIS}", ScrollableContainer)
+        if container.children:
+            return
+        a = self.analysis
+        action_colors = {"no_signal": "green", "send_back": "yellow", "quarantine": "red"}
+        action_fg = {"no_signal": "white", "send_back": "black", "quarantine": "white"}
+        bg = action_colors.get(a.action, "white")
+        action_label = a.action.replace("_", " ").upper()
+        fg = action_fg.get(a.action, "white")
+        header = Static(
+            f"[bold {fg}]{action_label}[/]",
+            classes="analysis-header",
+        )
+        header.styles.background = bg
+        header.styles.color = fg
+        widgets: list = [header]
+        if a.summary:
+            widgets.append(Static(f"[dim]Trajectory: {a.summary}[/dim]"))
+
+        groups = [
+            ("quarantine", "red", "Q", "Quarantine"),
+            ("fail", "red", "x", "Failed"),
+            ("warn", "yellow", "!", "Warnings"),
+        ]
+        for severity, color, icon, label in groups:
+            matches = [s for s in a.signals if s.severity == severity]
+            if not matches:
+                continue
+            widgets.append(Static(f"\n[bold {color}]{label}[/]"))
+            for s in matches:
+                lines = s.description.split("\n")
+                header = lines[0].replace("[", "(").replace("]", ")")
+                widgets.append(Static(f"  [{color}]{icon}[/] [bold]{s.name}[/]: {header}"))
+                for line in lines[1:]:
+                    safe = line.replace("[", "(").replace("]", ")")
+                    widgets.append(Static(f"    [dim]{safe}[/dim]"))
+
+        await container.mount_all(widgets)
 
     async def _populate_history_tabs(
         self, tabs: TabbedContent, history: list, tab_offset: int = 0
@@ -516,14 +575,25 @@ class StarfleetApp(App):
                 if header:
                     widgets.append(Static(header))
             else:
-                widgets.append(Static(format_history_entry(entry, orig_idx)))
+                w = Static(
+                    format_history_entry(entry, orig_idx, show_email=self._show_emails),
+                    classes="history-meta",
+                )
+                w._entry_idx = orig_idx
+                widgets.append(w)
 
             for fb in entry_fb:
                 ts = fb.get("timestamp", "")
                 ts_label = format_timestamp(ts) if ts else "unknown"
-                widgets.append(
-                    Collapsible(title=f"Feedback | {ts_label}", collapsed=False, classes="inner")
-                )
+                fb_email = fb.get("email", "")
+                if self._show_emails and fb_email:
+                    fb_title = f"Feedback | {ts_label} | {fb_email}"
+                else:
+                    fb_title = f"Feedback | {ts_label}"
+                c = Collapsible(title=fb_title, collapsed=False, classes="inner feedback-entry")
+                c._fb_email = fb_email
+                c._fb_ts_label = ts_label
+                widgets.append(c)
 
             diff_statics: list[Static] = []
             if is_proposal and prev is None:
@@ -588,6 +658,12 @@ class StarfleetApp(App):
             self.notify(f"Loaded task {self.task_id} (unsupported type)")
             self._maybe_show_tutorial()
             return
+        if not self.analysis:
+            from sfctl.analysis import analyze_task
+            self.analysis = analyze_task(self.data)
+        if self.analysis:
+            await self._populate_analysis()
+            self._update_scoreboard()
         if self.task_type == TaskType.PROJECT_PROPOSAL:
             await self._populate_proposal()
             self.notify(f"Loaded proposal {self.task_id}")
@@ -699,8 +775,15 @@ class StarfleetApp(App):
     async def go_to(self, section_id: str) -> None:
         if self.task_type == TaskType.UNKNOWN:
             return
+        if section_id == ids.ANALYSIS and not self.analysis:
+            from sfctl.analysis import analyze_task
+            self.analysis = analyze_task(self.data)
+            await self._populate_analysis()
         self.query_one(f"#{ids.MAIN_SWITCHER}", ContentSwitcher).current = section_id
         self.refresh_bindings()
+        if section_id == ids.ANALYSIS:
+            await self._populate_analysis()
+            return
         if section_id == ids.OVERVIEW:
             if self.task_type == TaskType.PROJECT_PROPOSAL:
                 await self._populate_proposal()
@@ -723,6 +806,14 @@ class StarfleetApp(App):
 
     async def action_go_to(self, section_id: str) -> None:
         await self.go_to(section_id)
+
+    async def action_show_analysis(self) -> None:
+        if not self.analysis:
+            from sfctl.analysis import analyze_task
+            self.analysis = analyze_task(self.data)
+            self._update_scoreboard()
+        from sfctl.screens import AnalysisModal
+        self.push_screen(AnalysisModal(self.analysis))
 
     async def action_go_model(self, index: int) -> None:
         if 0 <= index < len(self.models):
@@ -832,20 +923,59 @@ class StarfleetApp(App):
         self._editor.refresh_overview_annotations()
         self.notify("Reset to server state.")
 
+    def _session_ms(self) -> int:
+        history = self.data.get("history", [])
+        entry = history[-1] if history else {}
+        ms = 0
+        for s in (entry.get("finalUserTaskSessionTimes") or []):
+            try:
+                ms += int(s.get("endTime", 0)) - int(s.get("startTime", 0))
+            except (ValueError, TypeError):
+                pass
+        return ms
+
+    def _analysis_badge(self) -> str:
+        if not self.analysis:
+            return ""
+        a = self.analysis
+        if a.action == "quarantine":
+            return "[bold white on red] QUARANTINE [/]"
+        if a.action == "send_back":
+            return "[bold black on yellow] SEND BACK [/]"
+        warns = sum(1 for s in a.signals if s.severity == "warn")
+        if warns:
+            return f"[yellow]{warns} warn{'s' if warns != 1 else ''}[/yellow]"
+        return ""
+
     def rankings_summary(self) -> str:
+        lead = self._session_ms()
+        lead_part = f"[bold]Lead: {format_duration(lead)}[/bold]" if lead > 0 else ""
+        badge = self._analysis_badge()
         if self.task_type == TaskType.PROJECT_PROPOSAL and self.proposal:
             p = self.proposal
             parts = []
+            if badge:
+                parts.append(badge)
             if p.solved:
                 parts.append(solved_markup(p.solved))
             if p.duration:
                 parts.append(f"[dim]{p.duration}[/dim]")
             if p.trace_elapsed_ms:
                 parts.append(f"[bold]{format_duration(p.trace_elapsed_ms)} actual[/bold]")
+            if lead_part:
+                parts.append(lead_part)
             if p.rubrics:
                 parts.append(f"[dim]{len(p.rubrics)} rubrics[/dim]")
             return "  |  ".join(parts) if parts else ""
-        return ranking.rankings_summary(self.scores, self.data.get("history", []))
+        rank_str = ranking.rankings_summary(self.scores, self.data.get("history", []))
+        parts = []
+        if badge:
+            parts.append(badge)
+        if rank_str:
+            parts.append(rank_str)
+        if lead_part:
+            parts.append(lead_part)
+        return "  |  ".join(parts)
 
     def _update_scoreboard(self) -> None:
         try:
@@ -898,6 +1028,7 @@ class StarfleetApp(App):
         "[bold]Navigation[/bold]\n"
         "  1/2/3      switch to model A/B/C\n"
         "  0          overview (review, history, feedback)\n"
+        "  a          analysis (fact checks)\n"
         "  tab        next tab within a view\n"
         "  shift+tab  previous tab\n"
         "  e          expand/collapse all in current tab\n\n"
@@ -941,6 +1072,36 @@ class StarfleetApp(App):
         "Press ? for the full shortcut reference.\n"
         "Press escape to dismiss."
     )
+
+    def action_toggle_emails(self) -> None:
+        self._show_emails = not self._show_emails
+        history = self._get_history()
+        for widget in self.query(".history-meta"):
+            idx = getattr(widget, "_entry_idx", None)
+            if idx is not None and idx < len(history):
+                widget.update(format_history_entry(history[idx], idx, show_email=self._show_emails))
+        for widget in self.query(".comment-meta"):
+            email = getattr(widget, "_comment_email", "unknown")
+            ts = getattr(widget, "_comment_ts", "")
+            content = getattr(widget, "_comment_content", "")
+            author = email if self._show_emails else "reviewer"
+            widget.update(f"\n[dim]{author} ({ts}):[/dim]\n{content}")
+        for widget in self.query(".feedback-entry"):
+            fb_email = getattr(widget, "_fb_email", "")
+            ts_label = getattr(widget, "_fb_ts_label", "")
+            if fb_email:
+                if self._show_emails:
+                    widget.title = f"Feedback | {ts_label} | {fb_email}"
+                else:
+                    widget.title = f"Feedback | {ts_label}"
+        task = self.data.get("task", {})
+        email = (task.get("actionHistory") or [{}])[0].get("userId", "")
+        if email and email != EM_DASH:
+            if self._show_emails:
+                self.sub_title = f"Task {self.task_id}  |  {email}"
+            else:
+                self.sub_title = f"Task {self.task_id}"
+        self.notify("Emails visible" if self._show_emails else "Emails hidden")
 
     def action_help(self) -> None:
         self.push_screen(HelpModal(self._HELP_TEXT, "Keyboard Shortcuts"))

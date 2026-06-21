@@ -81,9 +81,8 @@ def parse_proposal(history: list[dict], trace: dict | None = None) -> ProposalDa
     code_patch = turns[0].get("codePatch", "") if turns else ""
 
     setup_commands = turns[0].get("bashHistory", []) if turns else []
-    bash_history = rollout.get("finalBashHistory") or []
-    if not bash_history and turns:
-        bash_history = turns[0].get("bashHistory", [])
+    final_bash = rollout.get("finalBashHistory") or []
+    bash_history = final_bash[len(setup_commands):] if final_bash else []
 
     issues_field = entry.get("opus_issues_partial") or entry.get("opus_issues_no") or {}
     issues = sf_value(issues_field)

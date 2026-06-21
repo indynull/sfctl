@@ -60,8 +60,6 @@ class HistoryEntry(BaseConfig):
     isEditAction: bool = False
 
 
-
-
 class ContentItem(BaseConfig):
     type: str | None = None
     title: str | None = None
@@ -98,8 +96,6 @@ class TraceEvent:
     timestamp: int | None = None
     input: str | dict = ""
     output: str | dict = ""
-
-
 
 
 @dataclass(slots=True)
@@ -216,4 +212,24 @@ class CookieProfile(NamedTuple):
     path: str
     label: str
     func: str
+
+
+@dataclass(slots=True)
+class QualitySignal:
+    """A single fact-check result from task analysis."""
+
+    name: str = ""
+    severity: str = "warn"  # "warn" | "fail" | "quarantine"
+    description: str = ""
+
+
+@dataclass(slots=True)
+class AnalysisResult:
+    """Fact-check signals and recommendation for a task."""
+
+    task_id: str = ""
+    task_type: str = ""
+    action: str = "no_signal"  # "no_signal" | "send_back" | "quarantine"
+    signals: list[QualitySignal] = field(default_factory=list)
+    summary: str = ""
 

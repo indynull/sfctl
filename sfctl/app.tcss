@@ -88,6 +88,11 @@ CommentsModal    { align: center middle; background: $background 60%; }
 #comments-preview { height: auto; max-height: 50; padding: 1; }
 #comments-editor  { height: auto; min-height: 10; max-height: 50; margin: 0; }
 
+/* Analysis modal */
+AnalysisModal    { align: center middle; background: $background 60%; }
+#analysis-modal  { width: 80%; height: auto; max-height: 70%; border: tall $primary; background: $panel; padding: 1 2; }
+.analysis-header { padding: 0 1; margin: 0 0 1 0; }
+
 /* Help modal */
 HelpModal    { align: center middle; background: $background 60%; }
 #help-modal  { width: 70%; height: auto; max-height: 70%; border: tall $primary; background: $panel; padding: 1 2; }

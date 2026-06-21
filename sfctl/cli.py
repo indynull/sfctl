@@ -7,7 +7,66 @@ import sys
 from sfctl.config import _config_path, load_config, save_config, update_config
 
 
+def _run_analyze(args):
+    """Run the analyze subcommand."""
+    from dataclasses import asdict
+    from pathlib import Path
+
+    if args.fixture:
+        fixture_path = Path(args.fixture)
+        if not fixture_path.exists():
+            print(f"Fixture file not found: {args.fixture}", file=sys.stderr)
+            raise SystemExit(1)
+        data = json.loads(fixture_path.read_text())
+    else:
+        from sfctl.api import AccessError, AuthError, fetch_data, resolve_cookies
+
+        cookies, _ = resolve_cookies(args.cookie_file, args.verbose, token_arg=args.token)
+        try:
+            data = fetch_data(args.task, cookies)
+        except (AccessError, AuthError) as e:
+            print(f"\nError: {e}", file=sys.stderr)
+            raise SystemExit(1) from None
+
+    from sfctl.analysis import analyze_task
+
+    result = analyze_task(data)
+
+    if args.json:
+        json.dump(asdict(result), sys.stdout, indent=2, default=str)
+        print()
+        return
+
+    from sfctl.app import StarfleetApp
+
+    task_arg = args.task or data.get("task", {}).get("taskId", "fixture")
+    cookies_val = None if args.fixture else cookies
+    StarfleetApp(task_arg, data, cookies=cookies_val, analysis=result).run()
+
+
+def _build_analyze_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="sfctl analyze",
+        description="Analyze a task for quality signals and AI detection",
+    )
+    p.add_argument("task", nargs="?", default=None, help="Task ID")
+    p.add_argument("-f", "--fixture", default=None, help="Load from fixture file")
+    p.add_argument("-c", "--cookie-file", default=None, help="Path to Cookies file")
+    p.add_argument("-t", "--token", default=None, help="Access token")
+    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("--json", action="store_true", help="Output analysis as JSON")
+    return p
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "analyze":
+        ap = _build_analyze_parser()
+        args = ap.parse_args(sys.argv[2:])
+        if not args.task and not args.fixture:
+            ap.error("task is required (or use --fixture)")
+        _run_analyze(args)
+        return
+
     parser = argparse.ArgumentParser(
         description="Starfleet Control -- task review and evaluation CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -15,6 +74,8 @@ def main():
   sfctl t-abc123def
   sfctl t-abc123def -t mytoken123
   sfctl t-abc123def -c /path/to/Cookies -v
+  sfctl analyze t-abc123def
+  sfctl analyze t-abc123def --json
   sfctl --fixture tests/fixtures/task_sample.json
   sfctl --show-config
   sfctl --set api_base https://staging.example.com

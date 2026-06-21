@@ -141,7 +141,7 @@ class SearchController:
                 for line_idx, line in enumerate(lines):
                     if grep_line.strip() in line.strip():
                         diff_display.scroll_to(0, line_idx, animate=False)
-                        diff_display.move_cursor((line_idx, 0))
+                        diff_display.select_line(line_idx)
                         break
             container.scroll_to_widget(diff_display, top=True, animate=False)
             return
