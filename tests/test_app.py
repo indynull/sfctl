@@ -99,6 +99,69 @@ class TestNavigation:
             await app.go_to_diff(0, fd.filename)
 
     @pytest.mark.asyncio
+    async def test_go_to_diff_expands_in_unified_view(self, app):
+        from textual.widgets import Collapsible, TabbedContent
+
+        from sfctl.ids import model_id
+
+        async with app.run_test() as pilot:
+            await pilot.press("u")
+            await pilot.pause()
+            assert app._current_section == "unified-view"
+            mid = model_id(0)
+            diffs_id = f"split-diffs-{mid}"
+            assert diffs_id in app._deferred_tabs
+            fd = app.models[0].file_diffs[0]
+            await app.go_to_diff(0, fd.filename)
+            await pilot.pause()
+            assert diffs_id not in app._deferred_tabs
+            tabs = app.query_one(f"#split-tabs-{mid}", TabbedContent)
+            assert tabs.active == diffs_id
+            pane = tabs.get_pane(diffs_id)
+            matches = [c for c in pane.query(Collapsible) if str(c.title) == fd.filename]
+            assert matches
+            assert matches[0].collapsed is False
+
+    @pytest.mark.asyncio
+    async def test_go_to_diff_jumps_to_grep_line_in_unified(self, app):
+        from textual.widgets import Collapsible, TabbedContent
+
+        from sfctl.ids import model_id
+        from sfctl.widgets import DiffDisplay
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("u")
+            await pilot.pause()
+            fd = app.models[0].file_diffs[0]
+            grep = next(
+                (
+                    ln.strip()
+                    for ln in fd.diff.splitlines()
+                    if ln.startswith("+") and len(ln) > 20 and not ln.startswith("+++")
+                ),
+                None,
+            )
+            assert grep
+            expected = next(
+                i for i, ln in enumerate(fd.diff.splitlines()) if grep in ln.strip()
+            )
+            await app.go_to_diff(0, fd.filename, grep)
+            await pilot.pause()
+            mid = model_id(0)
+            pane = app.query_one(f"#split-tabs-{mid}", TabbedContent).get_pane(
+                f"split-diffs-{mid}"
+            )
+            for c in pane.query(Collapsible):
+                if str(c.title) != fd.filename:
+                    continue
+                displays = list(c.query(DiffDisplay))
+                assert displays
+                assert displays[0].cursor_location[0] == expected
+                break
+            else:
+                raise AssertionError("diff collapsible not found")
+
+    @pytest.mark.asyncio
     async def test_go_to_diff_invalid_index(self, app):
         async with app.run_test():
             await app.go_to_diff(99, "nonexistent.py")
