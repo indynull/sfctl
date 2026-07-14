@@ -237,29 +237,55 @@ class SearchController:
                 try:
                     diff_display.scroll_cursor_visible(animate=False)
                 except Exception:
-                    diff_display.scroll_to(0, target, animate=False)
+                    try:
+                        diff_display.scroll_to(0, target, animate=False)
+                    except Exception:
+                        pass
                 try:
                     diff_display.focus()
                 except Exception:
                     pass
-        container.scroll_to_widget(diff_display, top=True, animate=False)
+        # Prefer scrolling to the cursor line, not just the top of the file widget.
+        try:
+            container.scroll_to_widget(diff_display, top=False, animate=False)
+        except Exception:
+            container.scroll_to_widget(diff_display, top=True, animate=False)
         return True
 
     @staticmethod
-    def _match_diff_line_index(diff_display: DiffDisplay, grep_line: str) -> int | None:
-        """Map a grep hit (often a raw unified-diff line) onto DiffDisplay row index."""
+    def _deprefix_diff_line(line: str) -> str:
+        """Strip a single leading +/- marker; keep indentation after it."""
+        s = line.rstrip("\n")
+        if s.startswith(("+++", "---")):
+            return s
+        if s[:1] in "+-":
+            return s[1:]
+        return s
+
+    @classmethod
+    def _match_diff_line_index(cls, diff_display: DiffDisplay, grep_line: str) -> int | None:
+        """Map a grep hit (often a raw unified-diff line) onto DiffDisplay row index.
+
+        Prefer exact / full-line matches so two lines that differ only by
+        indentation (common in diffs) do not collapse to the first hit.
+        """
         needle = grep_line.strip()
         if not needle:
             return None
-        # Prefer original +/- lines (what grep mode stores), then clean display text.
-        for line_idx, line in enumerate(diff_display.diff_text.splitlines()):
-            if needle in line.strip() or needle.lstrip("+- ").strip() in line.strip():
+        lines = [ln.rstrip("\n") for ln in diff_display.diff_text.splitlines()]
+
+        for line_idx, line in enumerate(lines):
+            if line.strip() == needle:
                 return line_idx
-        needle_clean = needle.lstrip("+- ").strip()
-        if needle_clean:
-            for line_idx, line in enumerate(diff_display.diff_text.splitlines()):
-                # Clean side has prefixes stripped in the TextArea document.
-                clean = line[1:] if line[:1] in "+- " else line
-                if needle_clean in clean.strip():
+
+        for line_idx, line in enumerate(lines):
+            if needle in line.strip():
+                return line_idx
+
+        needle_body = cls._deprefix_diff_line(needle)
+        if needle_body != needle:
+            for line_idx, line in enumerate(lines):
+                body = cls._deprefix_diff_line(line.strip())
+                if body == needle_body or needle_body in body:
                     return line_idx
         return None

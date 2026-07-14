@@ -133,33 +133,35 @@ class TestNavigation:
             await pilot.press("u")
             await pilot.pause()
             fd = app.models[0].file_diffs[0]
-            grep = next(
-                (
-                    ln.strip()
-                    for ln in fd.diff.splitlines()
-                    if ln.startswith("+") and len(ln) > 20 and not ln.startswith("+++")
-                ),
-                None,
-            )
-            assert grep
-            expected = next(
-                i for i, ln in enumerate(fd.diff.splitlines()) if grep in ln.strip()
-            )
-            await app.go_to_diff(0, fd.filename, grep)
-            await pilot.pause()
+            greps: list[tuple[str, int]] = []
+            for i, ln in enumerate(fd.diff.splitlines()):
+                if ln.startswith("+") and len(ln) > 20 and not ln.startswith("+++"):
+                    greps.append((ln.strip(), i))
+                if len(greps) >= 2:
+                    break
+            assert len(greps) >= 2
             mid = model_id(0)
-            pane = app.query_one(f"#split-tabs-{mid}", TabbedContent).get_pane(
-                f"split-diffs-{mid}"
-            )
-            for c in pane.query(Collapsible):
-                if str(c.title) != fd.filename:
-                    continue
-                displays = list(c.query(DiffDisplay))
-                assert displays
-                assert displays[0].cursor_location[0] == expected
-                break
-            else:
+
+            async def cursor_row() -> int:
+                pane = app.query_one(f"#split-tabs-{mid}", TabbedContent).get_pane(
+                    f"split-diffs-{mid}"
+                )
+                for c in pane.query(Collapsible):
+                    if str(c.title) != fd.filename:
+                        continue
+                    displays = list(c.query(DiffDisplay))
+                    assert displays
+                    return displays[0].cursor_location[0]
                 raise AssertionError("diff collapsible not found")
+
+            await app.go_to_diff(0, fd.filename, greps[0][0])
+            await pilot.pause()
+            assert await cursor_row() == greps[0][1]
+
+            # Second search on the same (already open) file must retarget the line.
+            await app.go_to_diff(0, fd.filename, greps[1][0])
+            await pilot.pause()
+            assert await cursor_row() == greps[1][1]
 
     @pytest.mark.asyncio
     async def test_go_to_diff_invalid_index(self, app):
