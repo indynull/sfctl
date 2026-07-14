@@ -1,0 +1,695 @@
+{
+  "task": {
+    "taskId": "t-nflbX6l55Q5pO3g97H2gP",
+    "status": "ready",
+    "projectId": "p-iAGos2k9tS4CUcPa9dJnh",
+    "createdAt": "2026-07-14T11:23:55.339Z",
+    "contentUrl": "t-nflbX6l55Q5pO3g97H2gP_content.json",
+    "annotationUrl": "t-nflbX6l55Q5pO3g97H2gP_annotation.json",
+    "reviewLevel": 1,
+    "priority": 0,
+    "claimExpiresAt": null,
+    "metadata": {
+      "taskType": "labeling",
+      "lastClaimedBy": "berat.dogan@ext.teachx.ai",
+      "lastModifiedBy": "berat.dogan@ext.teachx.ai",
+      "feedback": {
+        "entries": []
+      }
+    },
+    "lastModifiedAt": "2026-07-14T12:29:48.222Z",
+    "actionHistory": [
+      {
+        "type": "transition",
+        "timestamp": "2026-07-14T12:29:48.222Z",
+        "fromLevel": 0,
+        "toLevel": 1,
+        "userId": "berat.dogan@ext.teachx.ai"
+      }
+    ],
+    "claimableByBadges": [],
+    "claimableByEmail": null,
+    "collaborators": [],
+    "contentHash": "044c445a41ef85d89d8ee72e0c1b8191f2aea968296a7e9a5eba77cd7d73c89e",
+    "tags": [
+      {
+        "id": "lang-python",
+        "name": "Language: Python",
+        "visibilityLevel": "user"
+      },
+      {
+        "id": "domain-library",
+        "name": "Domain: Library",
+        "visibilityLevel": "user"
+      }
+    ],
+    "tagsHistory": [
+      {
+        "tags": [
+          {
+            "id": "lang-python",
+            "name": "Language: Python",
+            "visibilityLevel": "user"
+          },
+          {
+            "id": "domain-library",
+            "name": "Domain: Library",
+            "visibilityLevel": "user"
+          }
+        ],
+        "userId": "",
+        "timestamp": 1784028234450
+      }
+    ],
+    "taskEvents": [
+      {
+        "taskEventId": "te-MIXxANlUjD8zBhzL0TKT5",
+        "userId": "109629351997830460217",
+        "role": "user",
+        "timezone": "Europe/Istanbul",
+        "podId": "pod-dPLLzAtzP64dLoX8LJvIV",
+        "taskId": "t-nflbX6l55Q5pO3g97H2gP",
+        "projectId": "p-iAGos2k9tS4CUcPa9dJnh",
+        "workstreamId": "m6HKTE7C4qwhcpghC1iy1",
+        "isConsensus": false,
+        "isBurst": false,
+        "targetTaskEventId": null,
+        "targetUserId": null,
+        "score": null,
+        "feedback": null,
+        "passQA": null,
+        "billedAmount": 39.59901111111111,
+        "startTime": "1784028623825",
+        "type": "submit",
+        "leadTime": 3563911,
+        "finalUserTaskSessionTimes": [
+          {
+            "endTime": 1784028624348,
+            "startTime": 1784028623825
+          },
+          {
+            "endTime": 1784032187736,
+            "startTime": 1784028623825
+          }
+        ],
+        "strictStartTime": "1784028623825",
+        "fromReviewLevel": 0,
+        "toReviewLevel": 1,
+        "timestamp": "2026-07-14T12:29:48.222Z",
+        "editCount": 0,
+        "sourceLogId": "l-yUprDs5Qr4aOgt1GhGtlW",
+        "isReset": false
+      }
+    ]
+  },
+  "history": [
+    {
+      "prompt_understanding": {
+        "_sf_rich": true,
+        "value": "For this prompt, the most important aspects to take into account are correctly diagnosing the real root cause (that the splitter uses tuple membership; ttype not in (T.Whitespace, T.Comment.Single, T.Comment.Multiline), so a newline, which is the subtype Token.Text.Whitespace.Newline, wrongly clears the _seen_begin flag), following the debugging methadology the prompt dictates (form a hypothesis, verify with small repros, fix, then actively try to break the fix with edge cases and revise until s"
+      },
+      "response_justification": {
+        "_sf_rich": true,
+        "value": "Model A\n- No CQ rule violation, well structured with hypothesis -> repro table -> numbered fix-> adverserial-testing flow.\n\nModel B\n- No CQ rule violation, tightest of the three; leads with the root cause, uses compact before-after repro table, and ends on an honestly flagged known limitation.\n\nModel C\n- Fails O4 \u2014 at around 3000 characters it is the longest response, and it carries its before-after comparison in bullets rather than a scannable table, so the same info takes more reading.\n\n---\nMo"
+      },
+      "code_quality_justification": {
+        "_sf_rich": true,
+        "value": "Model B is the best as it fixes the reported bug, handles more transaction forms than C, and verifies most thoroughly. It is better than C as it also handles named/qualified transactions; revising until they passed; and records the change in the CHANGELOG, where C scopes those cases out.\nAs shown by: in sqlparse/engine/statement_splitter.py it replaces the tuple check with hierarchical ttype in T.Whitespace / ttype in T.Comment and keeps _seen_begin alive through TRANSACTION / WORK / TRAN, isola"
+      },
+      "coding_question": {
+        "sessions": [],
+        "rollouts": {
+          "A": {},
+          "B": {},
+          "C": {}
+        }
+      },
+      "response_clarity_checklist": {
+        "colHeaders": [
+          "Model A",
+          "Model B",
+          "Model C"
+        ],
+        "rowHeaders": [
+          "Organisation",
+          "Prose",
+          "Formatting",
+          "Other"
+        ],
+        "cells": [
+          [
+            {
+              "_sf_rich": true
+            },
+            null,
+            {
+              "_sf_rich": true,
+              "value": [
+                "o4_violated"
+              ]
+            }
+          ],
+          [
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null
+          ]
+        ]
+      },
+      "response_quality_ranking": {
+        "_sf_rich": true,
+        "value": [
+          {
+            "id": "model_b"
+          },
+          {
+            "id": "model_a"
+          },
+          {
+            "id": "model_c"
+          }
+        ]
+      },
+      "code_quality_ranking": {
+        "_sf_rich": true,
+        "value": [
+          {
+            "id": "model_b"
+          },
+          {
+            "id": "model_c"
+          },
+          {
+            "id": "model_a"
+          }
+        ]
+      },
+      "preference_ranking": {
+        "_sf_rich": true,
+        "value": [
+          {
+            "id": "model_b"
+          },
+          {
+            "id": "model_c"
+          },
+          {
+            "id": "model_a"
+          }
+        ]
+      },
+      "userId": "109629351997830460217",
+      "email": "berat.dogan@ext.teachx.ai",
+      "workstreamId": "m6HKTE7C4qwhcpghC1iy1",
+      "isConsensus": false,
+      "startTime": 1784028623825,
+      "leadTime": 3563911,
+      "finalUserTaskSessionTimes": [
+        {
+          "startTime": 1784028623825,
+          "endTime": 1784028624348
+        },
+        {
+          "startTime": 1784028623825,
+          "endTime": 1784032187736
+        }
+      ],
+      "passQA": false,
+      "feedback": {
+        "entries": []
+      },
+      "clientEnvironment": {
+        "currentScreen": {
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "reviewLevel": 0
+    }
+  ],
+  "feedback": {
+    "entries": []
+  },
+  "content": {
+    "taskId": "t-nflbX6l55Q5pO3g97H2gP",
+    "content": {
+      "type": "labeling",
+      "items": [
+        {
+          "type": "text",
+          "title": "Repository",
+          "text": "**sqlparse**"
+        },
+        {
+          "type": "trace",
+          "title": "Conversation History",
+          "content": "[{\"role\": {\"kind\": \"Human\"}, \"contents\": [{\"kind\": \"text\", \"text\": \"short prompt\"}]}]"
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": "I\u2019m seeing weird `sqlparse.split()` behavior with `BEGIN ...` SQL. Sometimes it keeps everything as one statement, and formatting changes (newlines/comments) make the results inconsistent. Please debug this carefully and don\u2019t jump to the first fix. I want you to form a hypothesis, verify it with small repro cases, implement a fix, then actively try to break your own fix with edge cases before finalizing. If something fails, revise and retest until behavior is stable. Plan first, then implement, and validate each step before finalizing.",
+          "title": "Current Prompt"
+        },
+        {
+          "type": "collection",
+          "title": "Model Traces",
+          "items": [
+            {
+              "type": "cursorWindow",
+              "title": "Model A",
+              "trace": {
+                "trace": "## Summary\n\n### Hypothesis\n`sqlparse.split()` treated `BEGIN;` as a transaction (split OK) but failed with `BEGIN\\n;` because **newlines were not recognized as whitespace** when deciding whether to keep the `_seen_begin` flag.\n\nRoot cause in `statement_splitter.py`:\n```python\nttype not in (T.Whitespace, T.Comment.Single, T.Comment.Multiline)\n```\nuses Python **tuple membership** (identity), while e",
+                "messages": "[{\"role\": \"user\", \"content\": \"fix it\", \"timestamp\": 1}, {\"role\": \"assistant\", \"content\": \"## Summary\\n\\n### Hypothesis\\n`sqlparse.split()` treated `BEGIN;` as a transaction (split OK) but failed with `BEGIN\\\\n;` because **newlines were not recognized as whitespace** when deciding whether to keep the `_seen_begin` flag.\\n\\nRoot cause in `statement_splitter.py`:\\n```python\\nttype not in (T.Whitespace, T.Comment.Single, T.Comment.Multiline)\\n```\\nuses Python **tuple membership** (identity), while e\", \"timestamp\": 2}, {\"role\": \"tool_call\", \"title\": \"Bash\", \"rawInput\": \"{\\\"variant\\\":\\\"Bash\\\"}\", \"rawOutput\": \"ok\", \"status\": \"completed\", \"timestamp\": 3}]",
+                "toolEvents": "[]"
+              },
+              "diff": {
+                "codeDiff": "diff --git a/sqlparse/engine/statement_splitter.py b/sqlparse/engine/statement_splitter.py\nindex 3e028f8..6d153b4 100644\n--- a/sqlparse/engine/statement_splitter.py\n+++ b/sqlparse/engine/statement_splitter.py\n@@ -7,6 +7,17 @@\n \n from sqlparse import sql, tokens as T\n \n+# Tokens that may appear between BEGIN and ';' in a transaction statement\n+# (e.g. BEGIN TRANSACTION, BEGIN WORK, BEGIN ISOLATION LEVEL ...).\n+# Block bodies (BEGIN SELECT ..., BEGIN DECLARE ...) use other keywords/tokens.\n+_BEGIN_TXN_MODIFIERS = frozenset({\n+    'TRANSACTION', 'TRAN', 'WORK',\n+    'ISOLATION', 'LEVEL',\n+    'READ', 'WRITE', 'ONLY',\n+    'COMMITTED', 'UNCOMMITTED', 'REPEATABLE', 'SERIALIZABLE', 'SNAPSHOT',\n+    'DEFERRABLE', 'NOT',\n+})\n+\n \n class StatementSplitter:\n     \"\"\"Filter that split stream at individ"
+              }
+            },
+            {
+              "type": "cursorWindow",
+              "title": "Model B",
+              "trace": {
+                "trace": "## What was going wrong\n\n**Hypothesis:** The splitter distinguishes transaction `BEGIN;` from `BEGIN\u2026END` blocks with a `_seen_begin` flag. That flag was cleared by newlines between `BEGIN` and `;` because the code used tuple equality instead of hierarchical token-type membership.\n\n**Verified root cause:** `\\n` lexes as `Token.Text.Whitespace.Newline`. This check:\n\n```python\nttype not in (T.Whites",
+                "messages": "[{\"role\": \"user\", \"content\": \"fix it\", \"timestamp\": 1}, {\"role\": \"assistant\", \"content\": \"## What was going wrong\\n\\n**Hypothesis:** The splitter distinguishes transaction `BEGIN;` from `BEGIN\\u2026END` blocks with a `_seen_begin` flag. That flag was cleared by newlines between `BEGIN` and `;` because the code used tuple equality instead of hierarchical token-type membership.\\n\\n**Verified root cause:** `\\\\n` lexes as `Token.Text.Whitespace.Newline`. This check:\\n\\n```python\\nttype not in (T.Whites\", \"timestamp\": 2}, {\"role\": \"tool_call\", \"title\": \"Bash\", \"rawInput\": \"{\\\"variant\\\":\\\"Bash\\\"}\", \"rawOutput\": \"ok\", \"status\": \"completed\", \"timestamp\": 3}]",
+                "toolEvents": "[]"
+              },
+              "diff": {
+                "codeDiff": "diff --git a/CHANGELOG b/CHANGELOG\nindex cd5fc11..d87fe10 100644\n--- a/CHANGELOG\n+++ b/CHANGELOG\n@@ -1,7 +1,14 @@\n Development Version\n -------------------\n \n-Nothing yet.\n+Bug Fixes\n+\n+* Fix ``sqlparse.split()`` treating ``BEGIN`` followed by a newline (or\n+  comments) before ``;`` as an open ``BEGIN...END`` block. Newlines are\n+  ``Token.Whitespace.Newline``, and the splitter incorrectly cleared its\n+  transaction-BEGIN marker because it used tuple equality instead of\n+  hierarchical token-type membership. Also recognize common transaction\n+  forms such as ``BEGIN TRANSACTION`` / ``BEGIN WORK`` / ``BEGIN TRAN``.\n \n \n Release 0.5.4 (Nov 28, 2025)\ndiff --git a/sqlparse/engine/statement_splitter.py b/sqlparse/engine/statement_splitter.py\nindex 3e028f8..926c1ed 100644\n--- a/sqlparse/engine/s"
+              }
+            },
+            {
+              "type": "cursorWindow",
+              "title": "Model C",
+              "trace": {
+                "trace": "The work is complete and stable. Here's a summary of what I found and did.\n\n## Root cause\n\nThe inconsistent `sqlparse.split()` behavior with `BEGIN` came from how the statement splitter decides whether a `BEGIN` starts a **transaction** (like `BEGIN;`, where the following `;` should split) versus a **`BEGIN...END` block** (where inner semicolons should not split).\n\nThe splitter uses a `_seen_begin",
+                "messages": "[{\"role\": \"user\", \"content\": \"fix it\", \"timestamp\": 1}, {\"role\": \"assistant\", \"content\": \"The work is complete and stable. Here's a summary of what I found and did.\\n\\n## Root cause\\n\\nThe inconsistent `sqlparse.split()` behavior with `BEGIN` came from how the statement splitter decides whether a `BEGIN` starts a **transaction** (like `BEGIN;`, where the following `;` should split) versus a **`BEGIN...END` block** (where inner semicolons should not split).\\n\\nThe splitter uses a `_seen_begin\", \"timestamp\": 2}, {\"role\": \"tool_call\", \"title\": \"Bash\", \"rawInput\": \"{\\\"variant\\\":\\\"Bash\\\"}\", \"rawOutput\": \"ok\", \"status\": \"completed\", \"timestamp\": 3}]",
+                "toolEvents": "[]"
+              },
+              "diff": {
+                "codeDiff": "diff --git a/sqlparse/engine/statement_splitter.py b/sqlparse/engine/statement_splitter.py\nindex 3e028f8..31190c0 100644\n--- a/sqlparse/engine/statement_splitter.py\n+++ b/sqlparse/engine/statement_splitter.py\n@@ -81,6 +81,24 @@ class StatementSplitter:\n         # Default\n         return 0\n \n+    @staticmethod\n+    def _is_transaction_begin_token(ttype, value):\n+        \"\"\"Whether a token can appear in a standalone transaction BEGIN.\n+\n+        A transaction statement looks like ``BEGIN;``, ``BEGIN WORK;`` or\n+        ``BEGIN TRANSACTION;``. Between the ``BEGIN`` keyword and the\n+        terminating semicolon only whitespace (including newlines), comments,\n+        the ``BEGIN`` keyword itself and the optional ``WORK``/``TRANSACTION``\n+        qualifier may appear. Whitespace and comment ch"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "metadata": {
+      "instance_id": "t-AGxcj8LyuAaOKuopU3YSn",
+      "models": [
+        "plasticcup",
+        "tahoma",
+        "opus48-xhigh"
+      ],
+      "label_map": {
+        "A": "plasticcup",
+        "B": "tahoma",
+        "C": "opus48-xhigh"
+      },
+      "permutation_id": "t-AGxcj8LyuAaOKuopU3YSn__perm5",
+      "permutation_index": 5,
+      "batch": "rrong-v3nc-0714-optional-table",
+      "dataset": "rollout_ready_v3_truncated_no_conda",
+      "repo": "sqlparse",
+      "anchor": "opus48-xhigh",
+      "language": "",
+      "domain": ""
+    },
+    "questions": [
+      {
+        "questionId": "coding_question",
+        "type": "coding",
+        "required": false,
+        "data": {
+          "text": "Review the code changes in the containers below.",
+          "mode": "point-pair-wise",
+          "containerCount": 3,
+          "hideSandboxFieldsFromTutors": true,
+          "preseeded": true,
+          "containerImages": [
+            "img-a",
+            "img-b",
+            "img-c"
+          ],
+          "containerPatches": [
+            "diff a",
+            "diff b",
+            "diff c"
+          ],
+          "dockerConfig": {
+            "image": "us-docker.pkg.dev/xai-dev-research-code/swe/swearena/starfleet-coding-question:e85437403995-dbu-260409001219-amd64"
+          }
+        }
+      },
+      {
+        "questionId": "prompt_understanding",
+        "type": "text",
+        "required": true,
+        "data": {
+          "text": "What are the most important aspects to take into account for this prompt, and why?",
+          "height": "5rem",
+          "defaultAnswer": "For this prompt, the most important aspects to take into account are [aspects], because [reason]."
+        },
+        "prefilledAnnotation": "For this prompt, the most important aspects to take into account are [aspects], because [reason]."
+      },
+      {
+        "questionId": "response_quality_ranking",
+        "type": "order",
+        "required": true,
+        "data": {
+          "text": "Rank the models by communication quality (organization, prose, and formatting of the text response).",
+          "options": [
+            {
+              "choiceId": "model_a",
+              "text": "Model A"
+            },
+            {
+              "choiceId": "model_b",
+              "text": "Model B"
+            },
+            {
+              "choiceId": "model_c",
+              "text": "Model C"
+            }
+          ]
+        }
+      },
+      {
+        "questionId": "response_clarity_checklist",
+        "type": "table",
+        "required": false,
+        "data": {
+          "text": "[Communication Quality] For EACH model, check every rule it VIOLATES in each category. Leave options unchecked if the model follows the rule or it doesn't apply. Judge in the context of the user's request; do not penalize a format in isolation.",
+          "colHeaders": [
+            "Model A",
+            "Model B",
+            "Model C"
+          ],
+          "rows": [
+            {
+              "header": "Organisation",
+              "question": {
+                "type": "multichoices",
+                "required": false,
+                "data": {
+                  "options": [
+                    {
+                      "choiceId": "o1_violated",
+                      "text": "[O1] Lead with the answer"
+                    },
+                    {
+                      "choiceId": "o2_violated",
+                      "text": "[O2] End on high-value info"
+                    },
+                    {
+                      "choiceId": "o3_violated",
+                      "text": "[O3] Bottom stays high-value"
+                    },
+                    {
+                      "choiceId": "o4_violated",
+                      "text": "[O4] No bloated body"
+                    },
+                    {
+                      "choiceId": "o5_violated",
+                      "text": "[O5] Obey format requests"
+                    },
+                    {
+                      "choiceId": "o6_violated",
+                      "text": "[O6] Fit the viewport"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "header": "Prose",
+              "question": {
+                "type": "multichoices",
+                "required": false,
+                "data": {
+                  "options": [
+                    {
+                      "choiceId": "p1_violated",
+                      "text": "[P1] Right altitude"
+                    },
+                    {
+                      "choiceId": "p2_violated",
+                      "text": "[P2] Simple language"
+                    },
+                    {
+                      "choiceId": "p3_violated",
+                      "text": "[P3] Define acronyms"
+                    },
+                    {
+                      "choiceId": "p4_violated",
+                      "text": "[P4] Not telegraphic"
+                    },
+                    {
+                      "choiceId": "p5_violated",
+                      "text": "[P5] Match difficulty"
+                    },
+                    {
+                      "choiceId": "p6_violated",
+                      "text": "[P6] Complete sentences"
+                    },
+                    {
+                      "choiceId": "p7_violated",
+                      "text": "[P7] No overstuffed lines"
+                    },
+                    {
+                      "choiceId": "p8_violated",
+                      "text": "[P8] Active voice"
+                    },
+                    {
+                      "choiceId": "p9_violated",
+                      "text": "[P9] No visible deliberation"
+                    },
+                    {
+                      "choiceId": "p10_violated",
+                      "text": "[P10] No vague 'this/it'"
+                    },
+                    {
+                      "choiceId": "p11_violated",
+                      "text": "[P11] No walls / no choppiness"
+                    },
+                    {
+                      "choiceId": "p12_violated",
+                      "text": "[P12] Minimize parentheses"
+                    },
+                    {
+                      "choiceId": "p13_violated",
+                      "text": "[P13] State claims once"
+                    },
+                    {
+                      "choiceId": "p14_violated",
+                      "text": "[P14] No parroting"
+                    },
+                    {
+                      "choiceId": "p15_violated",
+                      "text": "[P15] Be decisive"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "header": "Formatting",
+              "question": {
+                "type": "multichoices",
+                "required": false,
+                "data": {
+                  "options": [
+                    {
+                      "choiceId": "f1_violated",
+                      "text": "[F1] Format encodes meaning"
+                    },
+                    {
+                      "choiceId": "f2_violated",
+                      "text": "[F2] No headers as content"
+                    },
+                    {
+                      "choiceId": "f3_violated",
+                      "text": "[F3] No bullets as narrative"
+                    },
+                    {
+                      "choiceId": "f4_violated",
+                      "text": "[F4] Bullets vs numbers"
+                    },
+                    {
+                      "choiceId": "f5_violated",
+                      "text": "[F5] Steps lead with a verb"
+                    },
+                    {
+                      "choiceId": "f6_violated",
+                      "text": "[F6] Introduce lists/tables"
+                    },
+                    {
+                      "choiceId": "f7_violated",
+                      "text": "[F7] Break out hard-to-scan lists"
+                    },
+                    {
+                      "choiceId": "f8_violated",
+                      "text": "[F8] Tables for comparison only"
+                    },
+                    {
+                      "choiceId": "f9_violated",
+                      "text": "[F9] Explanations outside cells"
+                    },
+                    {
+                      "choiceId": "f10_violated",
+                      "text": "[F10] No long prose in cells"
+                    },
+                    {
+                      "choiceId": "f11_violated",
+                      "text": "[F11] Headers only for distinct topics"
+                    },
+                    {
+                      "choiceId": "f12_violated",
+                      "text": "[F12] Shallow heading hierarchy"
+                    },
+                    {
+                      "choiceId": "f13_violated",
+                      "text": "[F13] Diagrams only when needed"
+                    },
+                    {
+                      "choiceId": "f14_violated",
+                      "text": "[F14] Rules sparingly"
+                    },
+                    {
+                      "choiceId": "f15_violated",
+                      "text": "[F15] Bold sparingly"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "header": "Other",
+              "question": {
+                "type": "multichoices",
+                "required": false,
+                "data": {
+                  "options": [
+                    {
+                      "choiceId": "other_violated",
+                      "text": "[X] Other issue"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "rowHeaders": [
+            "Organisation",
+            "Prose",
+            "Formatting",
+            "Other"
+          ]
+        }
+      },
+      {
+        "questionId": "response_justification",
+        "type": "text",
+        "required": true,
+        "data": {
+          "text": "Justify your response ranking. List each model's issues (cite the rule/where), then say why the order is what it is.",
+          "height": "12rem",
+          "defaultAnswer": "Model A\n- <issue> \u2014 <1-2 sentence explanation; cite where, e.g. fails P14 because it said \"...\">\n\nModel B\n- <issue> \u2014 <1-2 sentence explanation; cite where, e.g. fails P14 because it said \"...\">\n\nModel C\n- <issue> \u2014 <1-2 sentence explanation; cite where, e.g. fails P14 because it said \"...\">\n\n---\nModel [ ] response is the best because [main reason]. It is better than Model [ ] because [specific comparison].\nModel [ ] response is second best because [main reason]. It is better than Model [ ] because [specific comparison].\nModel [ ] response is the worst because [main reason]."
+        },
+        "prefilledAnnotation": "Model A\n- <issue> \u2014 <1-2 sentence explanation; cite where, e.g. fails P14 because it said \"...\">\n\nModel B\n- <issue> \u2014 <1-2 sentence explanation; cite where, e.g. fails P14 because it said \"...\">\n\nModel C\n- <issue> \u2014 <1-2 sentence explanation; cite where, e.g. fails P14 because it said \"...\">\n\n---\nModel [ ] response is the best because [main reason]. It is better than Model [ ] because [specific comparison].\nModel [ ] response is second best because [main reason]. It is better than Model [ ] because [specific comparison].\nModel [ ] response is the worst because [main reason]."
+      },
+      {
+        "questionId": "code_quality_ranking",
+        "type": "order",
+        "required": true,
+        "data": {
+          "text": "Rank the models by code quality (correctness, completeness, style of the code changes).",
+          "options": [
+            {
+              "choiceId": "model_a",
+              "text": "Model A"
+            },
+            {
+              "choiceId": "model_b",
+              "text": "Model B"
+            },
+            {
+              "choiceId": "model_c",
+              "text": "Model C"
+            }
+          ]
+        }
+      },
+      {
+        "questionId": "code_quality_justification",
+        "type": "text",
+        "required": true,
+        "data": {
+          "text": "Justify your code-quality ranking.",
+          "height": "12rem",
+          "defaultAnswer": "Model [ ] is the best because [main reason]. It is better than Model [ ] because [specific comparison].\nAs shown by: [quote from the code / how you tested it / reference / your reasoning]\n\nModel [ ] is second best because [main reason]. It is better than Model [ ] because [specific comparison].\nAs shown by: [...]\n\nModel [ ] is the worst because [main reason].\nAs shown by: [...]"
+        },
+        "prefilledAnnotation": "Model [ ] is the best because [main reason]. It is better than Model [ ] because [specific comparison].\nAs shown by: [quote from the code / how you tested it / reference / your reasoning]\n\nModel [ ] is second best because [main reason]. It is better than Model [ ] because [specific comparison].\nAs shown by: [...]\n\nModel [ ] is the worst because [main reason].\nAs shown by: [...]"
+      },
+      {
+        "questionId": "preference_ranking",
+        "type": "order",
+        "required": true,
+        "data": {
+          "text": "Rank the model responses from best to worst (overall).",
+          "options": [
+            {
+              "choiceId": "model_a",
+              "text": "Model A"
+            },
+            {
+              "choiceId": "model_b",
+              "text": "Model B"
+            },
+            {
+              "choiceId": "model_c",
+              "text": "Model C"
+            }
+          ]
+        }
+      },
+      {
+        "questionId": "overall_justification",
+        "type": "text",
+        "required": false,
+        "data": {
+          "text": "Overall ranking justification \u2014 only fill this in if your overall ranking differs from your code-quality ranking; explain what tipped the balance.",
+          "height": "5rem",
+          "defaultAnswer": ""
+        }
+      }
+    ],
+    "tags": [
+      {
+        "id": "lang-python",
+        "name": "Language: Python",
+        "visibilityLevel": "user"
+      },
+      {
+        "id": "domain-library",
+        "name": "Domain: Library",
+        "visibilityLevel": "user"
+      }
+    ],
+    "id": "t-AGxcj8LyuAaOKuopU3YSn__perm5"
+  },
+  "trace": {
+    "trace": null
+  }
+}

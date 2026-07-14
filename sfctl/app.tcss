@@ -5,6 +5,16 @@ Screen { background: $surface; }
 .view-header   { dock: top; text-style: bold; color: $text; background: $primary; padding: 0 2; text-align: center; }
 .info-row      { margin: 0 1; }
 .status        { color: $text-muted; text-style: italic; padding: 0 1; }
+/* Arena: response summary at 80-col terminal width (toggle with w) */
+.response-wrap { width: 1fr; height: auto; }
+.response-wrap-narrow { align: center top; width: 1fr; }
+.response-terminal-width {
+  width: 80;
+  max-width: 80;
+  border: tall $accent;
+  padding: 1 1;
+  background: $panel;
+}
 
 /* Collapsibles */
 Collapsible            { margin: 0 0 1 0; border: round $primary 40%; }
@@ -43,6 +53,7 @@ DiffDisplay { height: auto; max-height: 50; }
 /* Info bar + content split */
 #info-bar     { height: 20fr; background: $surface; border-bottom: hkey $primary 40%; overflow-y: auto; }
 #content-area { height: 80fr; }
+#status-bar   { dock: bottom; height: 1; padding: 0 1; color: $text-muted; background: $panel; }
 
 /* Split handle */
 SplitHandle { color: $primary 40%; }
@@ -52,6 +63,16 @@ SplitHandle:hover { color: $accent; }
 #repo-bar    { height: auto; padding: 0 1; color: $text-muted; }
 #prompt-label { height: auto; padding: 0 1; margin: 1 0 0 0; text-style: bold; color: $text-muted; }
 #prompt-bar   { height: 1fr; padding: 0 1; margin: 0; }
+
+/* Unified view */
+#unified-view      { height: 1fr; }
+.unified-responses { height: 3fr; }
+.split-col         { width: 1fr; border-right: vkey $primary 30%; }
+.split-col:last-of-type { border-right: none; }
+.split-active { outline: solid $accent; }
+.split-scroll      { height: 1fr; }
+.unified-overview  { height: 2fr; border-top: hkey $primary 30%; }
+.unified-section   { height: auto; padding: 1 1; }
 
 /* Overview tabs */
 .history-entry          { margin: 0 0 1 0; }

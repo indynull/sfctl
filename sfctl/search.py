@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from textual.containers import ScrollableContainer
 from textual.widgets import Collapsible, TabbedContent
 
+from sfctl import ids
 from sfctl.ids import model_id, model_tabs_id, tab_diffs_id, tab_trace_id
 from sfctl.screens import DiffSearchModal, DiffSearchResult, EventSearchModal
 from sfctl.task_types import TaskType
@@ -22,16 +23,38 @@ class SearchController:
     def __init__(self, app: StarfleetApp) -> None:
         self._app = app
 
+    def _in_unified(self) -> bool:
+        return self._app._current_section == ids.UNIFIED_VIEW
+
+    def _resolve_tabs_and_container(
+        self, mid: str,
+    ) -> tuple[TabbedContent, ScrollableContainer] | None:
+        if self._in_unified():
+            try:
+                tabs = self._app.query_one(f"#split-tabs-{mid}", TabbedContent)
+                container = self._app.query_one(
+                    f"#split-scroll-{mid}", ScrollableContainer,
+                )
+                return tabs, container
+            except Exception:
+                return None
+        try:
+            tabs = self._app.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
+            container = self._app.query_one(f"#{mid}", ScrollableContainer)
+            return tabs, container
+        except Exception:
+            return None
+
     def search_diffs(self) -> None:
         if self._app.task_type == TaskType.PROJECT_PROPOSAL:
             self._search_proposal_diffs()
             return
         m = self._app._current_model()
         if not m:
-            self._app.notify("Navigate to a model first.", severity="warning")
+            self._app._status("Navigate to a model first.")
             return
         if not m.file_diffs:
-            self._app.notify("No diffs in this model.", severity="warning")
+            self._app._status("No diffs in this model.")
             return
 
         async def _on_result(result: DiffSearchResult | None) -> None:
@@ -44,7 +67,7 @@ class SearchController:
 
     def _search_proposal_diffs(self) -> None:
         if not self._app.proposal or not self._app.proposal.file_diffs:
-            self._app.notify("No diffs in this proposal.", severity="warning")
+            self._app._status("No diffs in this proposal.")
             return
 
         async def _on_result(result: DiffSearchResult | None) -> None:
@@ -61,7 +84,7 @@ class SearchController:
             events = m.tool_events if m else []
         dict_events = list(events)
         if not dict_events:
-            self._app.notify("No trace events.", severity="warning")
+            self._app._status("No trace events.")
             return
 
         async def _on_result(event_index: int | None) -> None:
@@ -79,11 +102,15 @@ class SearchController:
             if not m:
                 return
             mid = model_id(self._app.current_model_index)
-        await self._app.go_to(mid)
-        tabs = self._app.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-        tabs.active = tab_trace_id(mid)
-        target_pane = tabs.get_pane(tab_trace_id(mid))
-        container = self._app.query_one(f"#{mid}", ScrollableContainer)
+        if not self._in_unified():
+            await self._app.go_to(mid)
+        resolved = self._resolve_tabs_and_container(mid)
+        if not resolved:
+            return
+        tabs, container = resolved
+        trace_tid = f"split-trace-{mid}" if self._in_unified() else tab_trace_id(mid)
+        tabs.active = trace_tid
+        target_pane = tabs.get_pane(trace_tid)
 
         trace_collapsibles = [
             c for c in target_pane.query(Collapsible)
@@ -114,11 +141,15 @@ class SearchController:
         if not is_proposal and model_index >= len(self._app.models):
             return
         mid = model_id(model_index)
-        await self._app.go_to(mid)
-        tabs = self._app.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
-        tabs.active = tab_diffs_id(mid)
-        diffs_pane = tabs.get_pane(tab_diffs_id(mid))
-        container = self._app.query_one(f"#{mid}", ScrollableContainer)
+        if not self._in_unified():
+            await self._app.go_to(mid)
+        resolved = self._resolve_tabs_and_container(mid)
+        if not resolved:
+            return
+        tabs, container = resolved
+        diffs_tid = f"split-diffs-{mid}" if self._in_unified() else tab_diffs_id(mid)
+        tabs.active = diffs_tid
+        diffs_pane = tabs.get_pane(diffs_tid)
         for collapsible in diffs_pane.query(Collapsible):
             if str(collapsible.title) == filename:
                 already_open = not collapsible.collapsed

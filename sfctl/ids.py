@@ -35,8 +35,11 @@ COMMENTS_MODAL = "comments-modal"
 COMMENTS_PREVIEW = "comments-preview"
 COMMENTS_EDITOR = "comments-editor"
 
+UNIFIED_VIEW = "unified-view"
+
 SPLIT_HANDLE = "split-handle"
 CONTENT_AREA = "content-area"
+STATUS_BAR = "status-bar"
 
 
 DIFF_SEARCH_MODAL = "diff-search-modal"

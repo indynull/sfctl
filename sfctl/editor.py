@@ -103,7 +103,7 @@ class EditorController:
                         self._app.review.comments += "\n"
                 self._app.review.comments += result
                 self.save_comments(self._app.review.comments)
-                self._app.notify("Comment added.")
+                self._app._status("Comment added.")
 
         self._app.push_screen(ReviewCommentModal(snippet, context, lang), _on_result)
 
@@ -115,10 +115,10 @@ class EditorController:
 
     def copy_comments(self) -> None:
         if not self._app.review.comments.strip():
-            self._app.notify("No comments to copy.", severity="warning")
+            self._app._status("No comments to copy.")
             return
         self._app.copy_to_clipboard(self._app.review.comments)
-        self._app.notify("Comments copied to clipboard.")
+        self._app._status("Comments copied to clipboard.")
 
     def copy_summary(self) -> None:
         text = build_clipboard_text(
@@ -127,15 +127,15 @@ class EditorController:
             self._app.review.summary,
         )
         if not text.strip():
-            self._app.notify("Nothing to copy.", severity="warning")
+            self._app._status("Nothing to copy.")
             return
         self._app.copy_to_clipboard(text)
-        self._app.notify("Rankings & justification copied to clipboard.")
+        self._app._status("Rankings & justification copied to clipboard.")
 
     def yank_file(self) -> None:
         focused = self._app.focused
         if not isinstance(focused, DiffDisplay):
-            self._app.notify("Focus a diff first (click or tab into it).", severity="warning")
+            self._app._status("Focus a diff first (click or tab into it).")
             return
         has_selection = focused.selected_text.strip() != ""
         if has_selection:
@@ -148,7 +148,7 @@ class EditorController:
             snippet = focused.diff_text
             line_ref = diff_line_ref(focused.diff_text, 0, len(focused.diff_text.splitlines()) - 1)
         if not snippet.strip():
-            self._app.notify("No diff content to yank.", severity="warning")
+            self._app._status("No diff content to yank.")
             return
         filename = focused.filename
 
@@ -163,7 +163,7 @@ class EditorController:
                 self._app.review.summary += block
                 self.save_summary(self._app.review.summary)
                 self.refresh_overview_annotations()
-                self._app.notify(f"Yanked snippet from {filename}")
+                self._app._status(f"Yanked snippet from {filename}")
 
         self._app.push_screen(
             YankCommentModal(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -104,3 +105,103 @@ def format_event_line(ev) -> str:
     if ev.wall_time:
         parts.append(f"[dim]{format_duration(ev.wall_time)}[/]")
     return "  ".join(parts)
+
+
+def format_value(v: object, max_len: int = 120) -> str:
+    """Format a single value for inline display, truncating long strings."""
+    if v is None:
+        return "[dim italic]null[/]"
+    if isinstance(v, bool):
+        return f"[dim]{v}[/]"
+    if isinstance(v, (int, float)):
+        return f"[dim]{v}[/]"
+    if isinstance(v, str):
+        s = sanitize(v, max_len)
+        return f"[dim]{s}[/]" if s else '[dim italic]""[/]'
+    if isinstance(v, list):
+        if not v:
+            return "[dim italic](empty list)[/]"
+        items = ", ".join(sanitize(str(x), 40) for x in v[:5])
+        suffix = f" ... +{len(v) - 5}" if len(v) > 5 else ""
+        return f"[dim]({items}{suffix})[/]"
+    if isinstance(v, dict):
+        if not v:
+            return "[dim italic]{...}[/]"
+        items = ", ".join(
+            f"{sanitize(str(k), 20)}={sanitize(str(val), 30)}" for k, val in list(v.items())[:4]
+        )
+        suffix = f" ... +{len(v) - 4}" if len(v) > 4 else ""
+        return f"[dim]{items}{suffix}[/]"
+    return f"[dim]{sanitize(str(v), max_len)}[/]"
+
+
+def try_parse(v: object) -> object:
+    """If v is a JSON string, parse it into a dict/list."""
+    if isinstance(v, str):
+        try:
+            parsed = json.loads(v)
+            if isinstance(parsed, (dict, list)):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return v
+
+
+_MAX_BLOCK_LINES = 20
+
+_SKIP_INPUT_KEYS = frozenset({"variant"})
+_SKIP_OUTPUT_KEYS = frozenset({"type"})
+
+
+def is_multiline(v: object) -> bool:
+    return isinstance(v, str) and "\n" in v
+
+
+def decode_bytes(v: list[int]) -> str:
+    """Decode a list of byte values to a UTF-8 string."""
+    try:
+        return bytes(v).decode("utf-8", errors="replace")
+    except (TypeError, ValueError, OverflowError):
+        return str(v)
+
+
+def format_block(text: str, indent: str = "      ") -> str:
+    """Truncate a multi-line string and indent it for display."""
+    lines = text.split("\n")
+    if len(lines) > _MAX_BLOCK_LINES:
+        lines = [*lines[:_MAX_BLOCK_LINES], f"... +{len(lines) - _MAX_BLOCK_LINES} lines"]
+    return "\n".join(f"{indent}{line}" for line in lines)
+
+
+def unwrap_output(d: dict) -> object:
+    """Unwrap a wrapped output dict into its human-readable payload.
+
+    Proposal outputs use two patterns:
+
+    1. Single-wrapper: ``{"type": "ReadFile", "FileContent": {"content": "..."}}``
+       -- strip *type*, descend into the single remaining dict and pull
+       ``content`` / ``*_for_prompt``.
+    2. Flat wrapper: ``{"type": "Bash", "output_for_prompt": "exit: 0\\n...", ...}``
+       -- prefer the ``*_for_prompt`` key directly.
+    """
+    remaining = {k: v for k, v in d.items() if k not in _SKIP_OUTPUT_KEYS}
+
+    for k, v in remaining.items():
+        if k.endswith("_for_prompt") and isinstance(v, str) and v.strip():
+            return v
+
+    if len(remaining) == 1:
+        inner = next(iter(remaining.values()))
+        if isinstance(inner, dict):
+            for ik in ("content", "tool_output_for_prompt", "summary_for_prompt"):
+                iv = inner.get(ik)
+                if isinstance(iv, str) and iv.strip():
+                    return iv
+            if len(inner) == 1:
+                sole = next(iter(inner.values()))
+                if isinstance(sole, str):
+                    return sole
+        if isinstance(inner, str):
+            return inner
+
+    return remaining

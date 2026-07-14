@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from sfctl.diff import extract_file_diffs, parse_messages_trace
@@ -168,6 +169,26 @@ def _proposal_trace_ref(entry: dict) -> str:
     return _proposal_rollout(entry).get("traceRef", "")
 
 
+def _proposal_prompt(entry: dict) -> str:
+    """Extract the prompt text from a history entry."""
+    rollout = _proposal_rollout(entry)
+    for fb in rollout.get("finalFeedback", []):
+        if fb.get("questionId") == "prompt":
+            return fb.get("value", "")
+    turns = rollout.get("turns", [])
+    if turns:
+        content = turns[0].get("prompt", {}).get("content", [])
+        if content:
+            return content[0].get("text", "")
+    return ""
+
+
+def _proposal_code_patch(entry: dict) -> str:
+    """Extract the codePatch from a history entry."""
+    turns = _proposal_rollout(entry).get("turns", [])
+    return turns[0].get("codePatch", "") if turns else ""
+
+
 def _parse_iso(ts: str) -> datetime | None:
     """Parse an ISO-8601 timestamp, truncating nanoseconds to microseconds."""
     if not ts:
@@ -273,46 +294,110 @@ def has_proposal_changes(prev: dict, curr: dict) -> bool:
             return True
     if _proposal_issues_value(prev) != _proposal_issues_value(curr):
         return True
-    return _proposal_repo_url(prev) != _proposal_repo_url(curr)
+    if _proposal_repo_url(prev) != _proposal_repo_url(curr):
+        return True
+    if _proposal_prompt(prev) != _proposal_prompt(curr):
+        return True
+    return _proposal_code_patch(prev) != _proposal_code_patch(curr)
 
 
-def proposal_all_changes(prev: dict, curr: dict) -> list[str]:
-    """Return Rich-markup lines for all changed fields between two proposal entries."""
-    lines: list[str] = []
+def proposal_all_changes(
+    prev: dict, curr: dict,
+) -> list[tuple[str, str | None, str | None]]:
+    """Return ordered change items between two proposal history entries.
+
+    Each item is ``(label, old_text, new_text)`` where:
+    - Both texts present  → render as a redline diff
+    - Only new_text       → render new text in green
+    - Only old_text       → render old text in red
+    - Both ``None``       → label is a pre-formatted Rich markup line, render directly
+    """
+    items: list[tuple[str, str | None, str | None]] = []
+
+    def _markup(line: str) -> None:
+        items.append((line, None, None))
+
+    def _sf_change(label: str, old: str, new: str) -> None:
+        old_s = sanitize(old, 80) or "(empty)"
+        new_s = sanitize(new, 80) or "(empty)"
+        _markup(f"[bold]{label}:[/bold] [red]{old_s}[/red] → [green]{new_s}[/green]")
+
+    def _text_diff(label: str, old: str, new: str) -> None:
+        items.append((label, old, new))
+
+    old_prompt = _proposal_prompt(prev)
+    new_prompt = _proposal_prompt(curr)
+    if old_prompt != new_prompt:
+        _text_diff("Prompt", old_prompt, new_prompt)
+
+    for key, label in _PROPOSAL_SF_FIELDS:
+        if key in ("familiarity_explanation", "difficulty_explanation"):
+            old = sf_value(prev.get(key))
+            new = sf_value(curr.get(key))
+            if old != new:
+                _text_diff(label, old, new)
+
     if _proposal_trace_ref(prev) != _proposal_trace_ref(curr):
         old_ms = _proposal_run_elapsed_ms(prev)
         new_ms = _proposal_run_elapsed_ms(curr)
         old_dur = format_duration(old_ms) if old_ms else "?"
         new_dur = format_duration(new_ms) if new_ms else "?"
-        lines.append(f"[bold]Model run:[/bold] {old_dur} → {new_dur}")
+        _markup(f"[bold]Model run:[/bold] {old_dur} → {new_dur}")
+
+    for key, label in _PROPOSAL_SF_FIELDS:
+        if key in ("familiarity_explanation", "difficulty_explanation"):
+            continue
+        old = sf_value(prev.get(key))
+        new = sf_value(curr.get(key))
+        if old != new:
+            _sf_change(label, old, new)
+
     prev_url = _proposal_repo_url(prev)
     curr_url = _proposal_repo_url(curr)
     if prev_url != curr_url:
         if prev_url:
-            lines.append(f"[bold]Repo URL:[/bold] [red]{sanitize(prev_url)}[/red] → [green]{sanitize(curr_url)}[/green]")
+            _markup(f"[bold]Repo URL:[/bold] [red]{sanitize(prev_url)}[/red] → [green]{sanitize(curr_url)}[/green]")
         else:
-            lines.append(f"[bold]Repo URL:[/bold] [green]{sanitize(curr_url)}[/green]")
-    for key, label in _PROPOSAL_SF_FIELDS:
-        old = sf_value(prev.get(key))
-        new = sf_value(curr.get(key))
-        if old != new:
-            old_s = sanitize(old, 80) or "(empty)"
-            new_s = sanitize(new, 80) or "(empty)"
-            lines.append(f"[bold]{label}:[/bold] [red]{old_s}[/red] → [green]{new_s}[/green]")
+            _markup(f"[bold]Repo URL:[/bold] [green]{sanitize(curr_url)}[/green]")
+
+    old_patch = _proposal_code_patch(prev)
+    new_patch = _proposal_code_patch(curr)
+    if old_patch != new_patch:
+        old_files = set(_patch_filenames(old_patch))
+        new_files = set(_patch_filenames(new_patch))
+        added = len(new_files - old_files)
+        removed = len(old_files - new_files)
+        common = len(old_files & new_files)
+        parts: list[str] = []
+        if added:
+            parts.append(f"[green]+{added}[/green]")
+        if removed:
+            parts.append(f"[red]-{removed}[/red]")
+        if common:
+            parts.append(f"{common} common")
+        _markup(f"[bold]Code patch:[/bold] {', '.join(parts)} files")
+
     old_issues = _proposal_issues_value(prev)
     new_issues = _proposal_issues_value(curr)
     if old_issues != new_issues:
-        if old_issues and new_issues:
-            lines.append("[bold]Issues:[/bold] changed")
-        elif new_issues:
-            lines.append("[bold]Issues:[/bold] [green]added[/green]")
-        else:
-            lines.append("[bold]Issues:[/bold] [red]removed[/red]")
+        _text_diff("Issues", old_issues, new_issues)
+
     rubric_lines = proposal_rubric_changes(
         extract_rubrics(prev.get("rubrics")),
         extract_rubrics(curr.get("rubrics")),
     )
     if rubric_lines:
-        lines.append("[bold]Rubrics:[/bold]")
-        lines.extend(rubric_lines)
-    return lines
+        _markup("[bold]Rubrics:[/bold]")
+        for line in rubric_lines:
+            _markup(line)
+
+    return items
+
+
+def _patch_filenames(patch: str) -> list[str]:
+    """Extract ordered filenames from a unified diff."""
+    return re.findall(r"diff --git a/\S+ b/(\S+)", patch)
+
+
+
+

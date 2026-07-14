@@ -23,6 +23,7 @@ dependencies = [
     "tree-sitter-php>=0.23",
     "tree-sitter-ruby>=0.23",
     "tree-sitter-typescript>=0.23",
+    "deep-translator>=1.11",
 ]
 
 [project.scripts]
@@ -47,6 +48,8 @@ ignore = [
     "E501",    # line length - handled by formatter
     "W291",    # trailing whitespace in markdown f-strings is intentional (line breaks)
     "RUF012",  # mutable ClassVar - Textual convention for BINDINGS/CSS/etc.
+    "SIM105",  # contextlib.suppress - explicit try/except reads clearer in widget queries
+    "SIM117",  # nested with - Textual compose patterns require nesting
 ]
 
 [tool.ruff.format]

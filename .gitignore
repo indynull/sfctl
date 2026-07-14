@@ -1,16 +1,25 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
 *.egg-info
-
-# Virtual environments
-.venv
-
-# Coverage
+.venv/
 .coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.benchmarks/
 
-# testing snapshots
-snapshots/*.json
+# Ignore everything at the repo root by default so local dumps, scripts,
+# and scratch files are never staged. Only the project tree is tracked.
+/*
+!/.gitignore
+!/.python-version
+!/AGENTS.md
+!/README.md
+!/pyproject.toml
+!/uv.lock
+!/sfctl/
+!/tests/

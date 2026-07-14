@@ -8,8 +8,19 @@ from textual.containers import Horizontal
 from textual.widgets import Button, Static
 
 from sfctl.constants import ARROW_DOWN, ARROW_UP
-from sfctl.ids import Context, model_id, model_letter, model_tabs_id, tab_diffs_id, tab_response_id, tab_trace_id, vote_down_id, vote_label_id, vote_up_id
-from sfctl.models import Annotation, ModelScores
+from sfctl.ids import (
+    Context,
+    model_id,
+    model_letter,
+    model_tabs_id,
+    tab_diffs_id,
+    tab_response_id,
+    tab_trace_id,
+    vote_down_id,
+    vote_label_id,
+    vote_up_id,
+)
+from sfctl.models import Annotation
 
 if TYPE_CHECKING:
     from sfctl.app import StarfleetApp
@@ -78,7 +89,7 @@ class VotingController:
         sign = f"+{score}" if score > 0 else str(score)
         arrow = ARROW_UP if delta > 0 else ARROW_DOWN
         color = "green" if delta > 0 else "red"
-        self._app.notify(f"[{color}]{arrow}[/] {model_letter(idx)} {context}: {sign}")
+        self._app._status(f"[{color}]{arrow}[/] {model_letter(idx)} {context}: {sign}")
 
     def vote(self, delta: int) -> None:
         idx = self._app.current_model_index

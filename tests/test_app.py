@@ -110,6 +110,83 @@ class TestNavigation:
             assert app.current_model_index != 99
 
     @pytest.mark.asyncio
+    async def test_model_headers_get_rank_colors_on_mount(self, app, fixture_data):
+        from textual.color import Color
+        from textual.widgets import Static
+
+        from sfctl.formatting import rank_color
+        from sfctl.ids import model_header_id, model_id
+        from sfctl.ranking import previous_model_rank
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            history = fixture_data["history"]
+            for idx in range(3):
+                mid = model_id(idx)
+                header = app.query_one(f"#{model_header_id(mid)}", Static)
+                rank = previous_model_rank(history, idx)
+                assert rank is not None
+                assert header.styles.background == Color.parse(
+                    rank_color(rank, 3)
+                )
+
+    @pytest.mark.asyncio
+    async def test_go_model_keys_switch_models(self, app):
+        from textual.widgets import ContentSwitcher
+
+        async with app.run_test() as pilot:
+            await pilot.press("1")
+            await pilot.pause()
+            assert app.current_model_index == 0
+            switcher = app.query_one("#main-switcher", ContentSwitcher)
+            assert switcher.current == "model-a"
+            await pilot.press("2")
+            await pilot.pause()
+            assert app.current_model_index == 1
+            assert switcher.current == "model-b"
+            await pilot.press("3")
+            await pilot.pause()
+            assert app.current_model_index == 2
+            assert switcher.current == "model-c"
+
+    @pytest.mark.asyncio
+    async def test_go_model_while_maximized(self, app):
+        from textual.widgets import ContentSwitcher
+
+        async with app.run_test() as pilot:
+            await pilot.press("1")
+            await pilot.pause()
+            app.action_toggle_maximize()
+            assert app._maximized is True
+            await pilot.press("2")
+            await pilot.pause()
+            assert app.current_model_index == 1
+            assert app._maximized is True
+            switcher = app.query_one("#main-switcher", ContentSwitcher)
+            assert switcher.current == "model-b"
+            assert app.query_one("#content-area").display is True
+
+    @pytest.mark.asyncio
+    async def test_go_model_in_unified_maximized(self, app):
+        async with app.run_test() as pilot:
+            await pilot.press("u")
+            await pilot.pause()
+            assert app._current_section == "unified-view"
+            await pilot.press("1")
+            await pilot.pause()
+            assert app._split_focus == 0
+            app.action_toggle_maximize()
+            assert app._maximized is True
+            await pilot.press("3")
+            await pilot.pause()
+            assert app._split_focus == 2
+            assert app.current_model_index == 2
+            assert app._maximized is True
+            # Only model C column should be visible while maximized
+            assert app.query_one("#split-model-c").display is True
+            assert app.query_one("#split-model-a").display is False
+
+    @pytest.mark.asyncio
     async def test_no_models_overview(self, minimal_data):
         from sfctl.app import StarfleetApp
 
@@ -482,7 +559,7 @@ class TestOverview:
 
     @pytest.mark.asyncio
     async def test_history_entry_tabs(self, app):
-        from textual.widgets import Markdown, TabbedContent
+        from textual.widgets import Static, TabbedContent
 
         async with app.run_test() as pilot:
             await pilot.press("0")
@@ -493,9 +570,10 @@ class TestOverview:
             #   tab-entry-1 = L0 revision (original, has justification)
             tabs.active = "tab-entry-1"
             await pilot.pause()
+            await pilot.pause()
             pane = tabs.get_pane("tab-entry-1")
-            md_widgets = pane.query(Markdown)
-            assert len(md_widgets) > 0
+            statics = pane.query(Static)
+            assert len(statics) > 0
 
     @pytest.mark.asyncio
     async def test_justification_editor(self, app):
@@ -661,7 +739,10 @@ class TestHistoryOrder:
             await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
-            # First history tab (tab-entry-0) should be the newest (L1)
+            # Activate the first history tab to trigger deferred loading
+            tabs.active = "tab-entry-0"
+            await pilot.pause()
+            await pilot.pause()
             pane = tabs.get_pane("tab-entry-0")
             statics = pane.query("Static")
             text = str(statics[0].render())

@@ -1,5 +1,7 @@
 """CLI entry point for Starfleet Control."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
@@ -38,6 +40,10 @@ def main():
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Show progress messages")
     parser.add_argument(
+        "-l", "--lang", default=None,
+        help="Target language for translation, e.g. de, ja, es (default: system locale)",
+    )
+    parser.add_argument(
         "--dump", action="store_true", help="Dump raw JSON response to stdout and exit"
     )
     parser.add_argument("--show-config", action="store_true", help="Print current config and exit")
@@ -56,6 +62,11 @@ def main():
         help="Clear config keys (or entire config if no keys given)",
     )
     args = parser.parse_args()
+
+    if args.lang:
+        import os
+
+        os.environ["SFCTL_LANG"] = args.lang
 
     if args.clear_config is not None:
         if args.clear_config:

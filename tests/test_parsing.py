@@ -659,7 +659,8 @@ class TestProposalRunElapsed:
         }}}}
         assert has_proposal_changes(prev, curr)
         changes = proposal_all_changes(prev, curr)
-        combined = "\n".join(changes)
+        labels = [label for label, _, _ in changes]
+        combined = "\n".join(labels)
         assert "Model run" in combined
         assert "20.0m" in combined
         assert "40.0m" in combined
@@ -675,7 +676,7 @@ class TestProposalRunElapsed:
             },
         }}}}
         changes = proposal_all_changes(entry, entry)
-        assert not any("Model run" in c for c in changes)
+        assert not any("Model run" in label for label, _, _ in changes)
 
     def test_field_change_without_model_rerun(self):
         from sfctl.proposal import has_proposal_changes, proposal_all_changes
@@ -688,8 +689,8 @@ class TestProposalRunElapsed:
         updated = {**base, "opus_solved": {"_sf_rich": True, "value": "full"}}
         assert has_proposal_changes(base, updated)
         changes = proposal_all_changes(base, updated)
-        assert any("Solved" in c for c in changes)
-        assert not any("Model run" in c for c in changes)
+        assert any("Solved" in label for label, _, _ in changes)
+        assert not any("Model run" in label for label, _, _ in changes)
 
     def test_rubric_change_detected(self):
         from sfctl.proposal import has_proposal_changes, proposal_all_changes
@@ -703,7 +704,7 @@ class TestProposalRunElapsed:
         ]}}
         assert has_proposal_changes(prev, curr)
         changes = proposal_all_changes(prev, curr)
-        assert any("Rubrics" in c for c in changes)
+        assert any("Rubrics" in label for label, _, _ in changes)
 
     def test_nanosecond_timestamp_parsed(self):
         from sfctl.proposal import _parse_iso
@@ -816,9 +817,13 @@ class TestSnapshotParsing:
         tt = detect_task_type(data)
         history = data["history"]
         assert isinstance(history, list)
-        assert tt in (TaskType.CODE_REVIEW, TaskType.PROJECT_PROPOSAL)
+        assert tt in (
+            TaskType.CODE_REVIEW,
+            TaskType.ARENA_RANKING,
+            TaskType.PROJECT_PROPOSAL,
+        )
 
-        if tt == TaskType.CODE_REVIEW:
+        if tt in (TaskType.CODE_REVIEW, TaskType.ARENA_RANKING):
             parsed = parse_content(data["content"])
             assert len(parsed.models) == 3
             for m in parsed.models:
@@ -852,10 +857,15 @@ class TestSnapshotParsing:
             prev = history[i - 1] if i > 0 else None
             fb = feedback_for_entry(history, i)
             assert isinstance(fb, list)
-            if tt == TaskType.CODE_REVIEW:
+            if tt in (TaskType.CODE_REVIEW, TaskType.ARENA_RANKING):
                 format_history_entry(entry, i)
                 if prev:
-                    has_meaningful_changes(prev, entry)
+                    if tt == TaskType.ARENA_RANKING:
+                        from sfctl.arena import has_arena_changes
+
+                        has_arena_changes(prev, entry)
+                    else:
+                        has_meaningful_changes(prev, entry)
             elif prev:
                 has_proposal_changes(prev, entry)
                 proposal_all_changes(prev, entry)

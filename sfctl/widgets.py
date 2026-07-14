@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 
 from rich.color import Color
@@ -23,7 +22,17 @@ from sfctl.diff import (
     language_from_filename,
     parse_diff_lines,
 )
-from sfctl.formatting import sanitize
+from sfctl.formatting import (
+    _SKIP_INPUT_KEYS,
+    _SKIP_OUTPUT_KEYS,
+    decode_bytes,
+    format_block,
+    format_value,
+    is_multiline,
+    sanitize,
+    try_parse,
+    unwrap_output,
+)
 
 
 class SplitHandle(Widget):
@@ -406,113 +415,9 @@ class LazyCollapsible(Collapsible):
         )
 
 
-def format_value(v: object, max_len: int = 120) -> str:
-    """Format a single value for inline display, truncating long strings."""
-    if v is None:
-        return "[dim italic]null[/]"
-    if isinstance(v, bool):
-        return f"[dim]{v}[/]"
-    if isinstance(v, (int, float)):
-        return f"[dim]{v}[/]"
-    if isinstance(v, str):
-        s = sanitize(v, max_len)
-        return f"[dim]{s}[/]" if s else '[dim italic]""[/]'
-    if isinstance(v, list):
-        if not v:
-            return "[dim italic](empty list)[/]"
-        items = ", ".join(sanitize(str(x), 40) for x in v[:5])
-        suffix = f" ... +{len(v) - 5}" if len(v) > 5 else ""
-        return f"[dim]({items}{suffix})[/]"
-    if isinstance(v, dict):
-        if not v:
-            return "[dim italic]{...}[/]"
-        items = ", ".join(
-            f"{sanitize(str(k), 20)}={sanitize(str(val), 30)}" for k, val in list(v.items())[:4]
-        )
-        suffix = f" ... +{len(v) - 4}" if len(v) > 4 else ""
-        return f"[dim]{items}{suffix}[/]"
-    return f"[dim]{sanitize(str(v), max_len)}[/]"
-
-
-def try_parse(v: object) -> object:
-    """If v is a JSON string, parse it into a dict/list."""
-    if isinstance(v, str):
-        try:
-            parsed = json.loads(v)
-            if isinstance(parsed, (dict, list)):
-                return parsed
-        except (json.JSONDecodeError, ValueError):
-            pass
-    return v
-
-
-_MAX_BLOCK_LINES = 20
-
-# Keys that are just wrapper metadata and duplicate the event name.
-_SKIP_INPUT_KEYS = frozenset({"variant"})
-_SKIP_OUTPUT_KEYS = frozenset({"type"})
-
-
-def _is_multiline(v: object) -> bool:
-    return isinstance(v, str) and "\n" in v
-
-
-def _decode_bytes(v: list[int]) -> str:
-    """Decode a list of byte values to a UTF-8 string."""
-    try:
-        return bytes(v).decode("utf-8", errors="replace")
-    except (TypeError, ValueError, OverflowError):
-        return str(v)
-
-
-def _format_block(text: str, indent: str = "      ") -> str:
-    """Truncate a multi-line string and indent it for display."""
-    lines = text.split("\n")
-    if len(lines) > _MAX_BLOCK_LINES:
-        lines = lines[:_MAX_BLOCK_LINES] + [f"... +{len(lines) - _MAX_BLOCK_LINES} lines"]
-    return "\n".join(f"{indent}{line}" for line in lines)
-
-
-def _unwrap_output(d: dict) -> object:
-    """Unwrap a wrapped output dict into its human-readable payload.
-
-    Proposal outputs use two patterns:
-
-    1. Single-wrapper: ``{"type": "ReadFile", "FileContent": {"content": "..."}}``
-       — strip *type*, descend into the single remaining dict and pull
-       ``content`` / ``*_for_prompt``.
-    2. Flat wrapper: ``{"type": "Bash", "output_for_prompt": "exit: 0\\n...", ...}``
-       — prefer the ``*_for_prompt`` key directly.
-
-    Model-ranking outputs are already plain strings and never reach here.
-    """
-    remaining = {k: v for k, v in d.items() if k not in _SKIP_OUTPUT_KEYS}
-
-    # Prefer a *_for_prompt key at top level (e.g. Bash output_for_prompt).
-    for k, v in remaining.items():
-        if k.endswith("_for_prompt") and isinstance(v, str) and v.strip():
-            return v
-
-    if len(remaining) == 1:
-        inner = next(iter(remaining.values()))
-        if isinstance(inner, dict):
-            for ik in ("content", "tool_output_for_prompt", "summary_for_prompt"):
-                iv = inner.get(ik)
-                if isinstance(iv, str) and iv.strip():
-                    return iv
-            if len(inner) == 1:
-                sole = next(iter(inner.values()))
-                if isinstance(sole, str):
-                    return sole
-        if isinstance(inner, str):
-            return inner
-
-    return remaining
-
-
 def _make_block_widget(text: str) -> Static:
     """Create a Static widget that preserves newlines and brackets."""
-    block = _format_block(text)
+    block = format_block(text)
     return Static(block, markup=False, classes="trace-block")
 
 
@@ -529,8 +434,8 @@ def _add_value_widgets(
     """
     key_str = sanitize(str(key), 30)
     if isinstance(value, list) and value and all(isinstance(x, int) for x in value):
-        value = _decode_bytes(value)
-    if _is_multiline(value):
+        value = decode_bytes(value)
+    if is_multiline(value):
         widgets.append(Static(f"{indent}[{key_style}]{key_str}[/]:"))
         widgets.append(_make_block_widget(value))
     else:
@@ -559,7 +464,7 @@ def trace_event_detail_widgets(ev) -> list[Static]:
         else:
             text = str(args)
             if text.strip():
-                if _is_multiline(text):
+                if is_multiline(text):
                     widgets.append(Static("  [bold]args:[/]"))
                     widgets.append(_make_block_widget(text))
                 else:
@@ -570,11 +475,11 @@ def trace_event_detail_widgets(ev) -> list[Static]:
     if raw_output:
         response = try_parse(raw_output)
         if isinstance(response, dict) and response:
-            response = _unwrap_output(response)
+            response = unwrap_output(response)
         if isinstance(response, str):
             text = response.strip()
             if text:
-                if _is_multiline(text):
+                if is_multiline(text):
                     widgets.append(Static(f"  [bold]{ARROW_RIGHT} output:[/]"))
                     widgets.append(_make_block_widget(text))
                 else:
@@ -585,7 +490,7 @@ def trace_event_detail_widgets(ev) -> list[Static]:
                 if k in _SKIP_OUTPUT_KEYS:
                     continue
                 if isinstance(v, list) and v and all(isinstance(x, int) for x in v):
-                    v = _decode_bytes(v)
+                    v = decode_bytes(v)
                 _add_value_widgets(widgets, k, v, "bold green")
         elif isinstance(response, list) and response:
             widgets.append(Static(f"  [bold]{ARROW_RIGHT}[/] {format_value(response)}"))

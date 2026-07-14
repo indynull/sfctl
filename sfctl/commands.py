@@ -24,7 +24,14 @@ class NavigationProvider(Provider):
                 ("Justification: Edit", lambda: app.run_worker(app.action_edit_justification())),
                 ("Refresh Data", lambda: app.action_refresh_data()),
                 ("Reset: Clear Local Scores & Justification", lambda: app.action_reset_local()),
+                ("View: Toggle Split (side-by-side)", lambda: app.run_worker(app.action_split_view())),
+                ("View: Toggle Maximize", lambda: app.action_toggle_maximize()),
+                ("View: Toggle Translate", lambda: app.action_translate()),
                 ("Help: Show Shortcuts", lambda: app.action_help()),
+                (
+                    "View: 80-col terminal preview (response)",
+                    lambda: app.action_toggle_response_width(),
+                ),
             ]
         )
         for theme_name in app.available_themes:
