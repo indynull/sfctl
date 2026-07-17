@@ -9,10 +9,16 @@ from sfctl.formatting import sanitize
 from sfctl.history import get_full_ranking, history_ranking_changes, to_label
 
 JUSTIFICATION_KEYS: list[tuple[str, str]] = [
-    ("prompt_understanding", "Prompt understanding"),
-    ("response_justification", "Response justification"),
-    ("code_quality_justification", "Code justification"),
-    ("overall_justification", "Overall justification"),
+    ("prompt_understanding", "Prompt Understanding"),
+    ("response_justification", "Response Justification"),
+    ("code_quality_justification", "Code Justification"),
+    ("overall_justification", "Overall Justification"),
+]
+
+EDITABLE_JUSTIFICATION_KEYS: list[tuple[str, str]] = [
+    ("response_justification", "Response Quality"),
+    ("code_quality_justification", "Code Quality"),
+    ("overall_justification", "Overall"),
 ]
 
 RANKING_KEYS: list[tuple[str, str]] = [
@@ -25,6 +31,15 @@ _BRACKET_RULE = re.compile(r"\[([^\]]+)\]")
 
 
 @dataclass(slots=True)
+class ChecklistRule:
+    """One code-quality rule option from the task question catalog."""
+
+    choice_id: str
+    title: str
+    category: str
+
+
+@dataclass(slots=True)
 class ArenaMeta:
     """Task-level metadata for arena ranking."""
 
@@ -34,6 +49,7 @@ class ArenaMeta:
     dataset: str = ""
     anchor: str = ""
     rule_labels: dict[str, str] = field(default_factory=dict)
+    checklist_catalog: list[ChecklistRule] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -53,7 +69,11 @@ def parse_arena_meta(data: dict) -> ArenaMeta:
         str(k): str(v) for k, v in (meta.get("label_map") or {}).items() if k and v
     }
     model_ids = [str(m) for m in (meta.get("models") or []) if m]
-    rule_labels = _rule_labels_from_questions(content.get("questions") or [])
+    questions = content.get("questions") or []
+    catalog = parse_checklist_catalog(questions)
+    rule_labels = {r.choice_id: r.title for r in catalog}
+    if not rule_labels:
+        rule_labels = _rule_labels_from_questions(questions)
     return ArenaMeta(
         label_map=label_map,
         model_ids=model_ids,
@@ -61,7 +81,27 @@ def parse_arena_meta(data: dict) -> ArenaMeta:
         dataset=str(meta.get("dataset") or ""),
         anchor=str(meta.get("anchor") or ""),
         rule_labels=rule_labels,
+        checklist_catalog=catalog,
     )
+
+
+def parse_checklist_catalog(questions: list) -> list[ChecklistRule]:
+    """Full code-quality rule catalog from task questions."""
+    out: list[ChecklistRule] = []
+    for q in questions:
+        if q.get("questionId") != "response_clarity_checklist":
+            continue
+        for row in (q.get("data") or {}).get("rows") or []:
+            category = str(row.get("header") or "").strip() or "Other"
+            opts = ((row.get("question") or {}).get("data") or {}).get("options") or []
+            for opt in opts:
+                cid = str(opt.get("choiceId") or "").strip()
+                if not cid:
+                    continue
+                title = _rule_title(opt.get("text") or "") or cid
+                out.append(ChecklistRule(choice_id=cid, title=title, category=category))
+        break
+    return out
 
 
 def _rule_title(text: str) -> str:
@@ -274,8 +314,24 @@ def checklist_violation_summary(cl: ArenaChecklist) -> str:
 
 
 def _text_field(entry: dict, key: str) -> str:
-    val = (entry.get(key) or {}).get("value", "")
-    return val.strip() if isinstance(val, str) else ""
+    """Unwrap a justification field from history.
+
+    Server payloads usually use ``{"_sf_rich": true, "value": "..."}``, but
+    some entries ship a bare string (or omit the field). Accept both.
+    """
+    raw = entry.get(key)
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    if isinstance(raw, dict):
+        val = raw.get("value", "")
+        if isinstance(val, list):
+            return ", ".join(str(v) for v in val).strip()
+        if isinstance(val, str):
+            return val.strip()
+        return str(val).strip() if val else ""
+    return ""
 
 
 def justification_sections(entry: dict) -> list[tuple[str, str]]:
@@ -294,6 +350,211 @@ def combined_justification(entry: dict) -> str:
     for label, text in justification_sections(entry):
         parts.append(f"## {label}\n\n{text}")
     return "\n\n".join(parts)
+
+
+def server_editable_justifications(entry: dict | None) -> dict[str, str]:
+    """Map editable justification keys to server text for one history entry."""
+    if not entry:
+        return {key: "" for key, _ in EDITABLE_JUSTIFICATION_KEYS}
+    return {key: _text_field(entry, key) for key, _ in EDITABLE_JUSTIFICATION_KEYS}
+
+
+def combine_justification_map(justifications: dict[str, str]) -> str:
+    """Markdown combining local multi-field justifications for clipboard/export."""
+    parts: list[str] = []
+    for key, label in EDITABLE_JUSTIFICATION_KEYS:
+        text = (justifications.get(key) or "").strip()
+        if text:
+            parts.append(f"## {label}\n\n{text}")
+    return "\n\n".join(parts)
+
+
+def empty_justification_hint(key: str) -> str:
+    """Markdown placeholder shown when a local editable section is empty."""
+    hints = {
+        "response_justification": (
+            "*No response notes yet — **Ctrl+E** to edit (moves through sections), "
+            "**v** to mark code quality rules.*"
+        ),
+        "code_quality_justification": (
+            "*No code notes yet — **Ctrl+E** to edit, "
+            "**y** on a diff to copy a snippet.*"
+        ),
+        "overall_justification": (
+            "*No overall notes yet — **Ctrl+E** to edit.*"
+        ),
+    }
+    return hints.get(key, "*Empty — press **Ctrl+E** to write.*")
+
+
+def section_header_hint(key: str) -> str:
+    """Dim keyboard-hint suffix for an editable section title."""
+    _ = key
+    return "click to edit · Ctrl+E cycles · Esc saves"
+
+
+def append_violation_note(
+    response_text: str,
+    *,
+    model_letter: str,
+    rule_label: str,
+    why: str,
+) -> str:
+    """Insert a labeled violation note under a model heading in response text.
+
+    Layout::
+
+        ### Model A
+        #### No bloated body
+        optional why text
+    """
+    letter = (model_letter or "?").strip().upper()[:1] or "?"
+    rule = (rule_label or "Violation").strip()
+    why_s = (why or "").strip()
+    model_h = f"### Model {letter}"
+    rule_h = f"#### {rule}"
+    note_block = f"{rule_h}\n\n{why_s}\n" if why_s else f"{rule_h}\n"
+
+    text = (response_text or "").rstrip()
+    if not text:
+        return f"{model_h}\n\n{note_block}".rstrip() + "\n"
+
+    marker = f"### Model {letter}"
+    idx = text.find(marker)
+    if idx < 0:
+        return text + f"\n\n{model_h}\n\n{note_block}".rstrip() + "\n"
+
+    rest_start = idx + len(marker)
+    next_model = re.search(r"\n### Model [A-Z]\b", text[rest_start:])
+    if next_model:
+        insert_at = rest_start + next_model.start()
+        before, after = text[:insert_at].rstrip(), text[insert_at:]
+        return before + f"\n\n{note_block}\n" + after.lstrip("\n")
+    return text.rstrip() + f"\n\n{note_block}".rstrip() + "\n"
+
+
+def list_checklist_violations(
+    entry: dict,
+    rule_labels: dict[str, str] | None = None,
+) -> list[tuple[int, str, str]]:
+    """Flat list of (model_idx, choice_id, rule_title) from checklist cells."""
+    labels = rule_labels or {}
+    pairs = selections_from_entry(entry)
+    out: list[tuple[int, str, str]] = []
+    for model_idx, cid in pairs:
+        out.append((model_idx, cid, labels.get(cid, cid)))
+    return out
+
+
+def selections_from_entry(entry: dict | None) -> list[tuple[int, str]]:
+    """(model_idx, choice_id) pairs from a history checklist, order preserved."""
+    if not entry:
+        return []
+    raw = entry.get("response_clarity_checklist")
+    if not isinstance(raw, dict):
+        return []
+    out: list[tuple[int, str]] = []
+    seen: set[tuple[int, str]] = set()
+    for row in raw.get("cells") or []:
+        if not isinstance(row, list):
+            continue
+        for c_idx, cell in enumerate(row):
+            for cid in _choice_ids_from_cell(cell):
+                key = (c_idx, cid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(key)
+    return out
+
+
+def normalize_selections(raw: object) -> list[tuple[int, str]]:
+    """Normalize persisted selection payloads to (model_idx, choice_id) pairs."""
+    if not isinstance(raw, list):
+        return []
+    out: list[tuple[int, str]] = []
+    seen: set[tuple[int, str]] = set()
+    for item in raw:
+        model_idx: int | None = None
+        cid = ""
+        if isinstance(item, dict):
+            try:
+                model_idx = int(item.get("model", item.get("model_idx", -1)))
+            except (TypeError, ValueError):
+                model_idx = None
+            cid = str(item.get("choice_id") or item.get("id") or "").strip()
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            try:
+                model_idx = int(item[0])
+            except (TypeError, ValueError):
+                model_idx = None
+            cid = str(item[1] or "").strip()
+        if model_idx is None or model_idx < 0 or not cid:
+            continue
+        key = (model_idx, cid)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def serialize_selections(selections: list[tuple[int, str]]) -> list[dict]:
+    """JSON-friendly form of local checklist selections."""
+    return [{"model": m, "choice_id": c} for m, c in selections]
+
+
+def checklist_from_selections(
+    selections: list[tuple[int, str]],
+    catalog: list[ChecklistRule],
+    *,
+    n_models: int = 3,
+    rule_labels: dict[str, str] | None = None,
+) -> ArenaChecklist | None:
+    """Build a display checklist from local selections + the rule catalog."""
+    if not catalog and not selections:
+        return None
+    labels = rule_labels or {r.choice_id: r.title for r in catalog}
+    categories: list[str] = []
+    for r in catalog:
+        if r.category not in categories:
+            categories.append(r.category)
+    for _, cid in selections:
+        if cid not in labels and "Other" not in categories:
+            categories.append("Other")
+            break
+    if not categories:
+        categories = ["Other"]
+
+    n = max(1, n_models)
+    grid: dict[str, list[list[str]]] = {
+        cat: [[] for _ in range(n)] for cat in categories
+    }
+    cat_for_cid = {r.choice_id: r.category for r in catalog}
+    for model_idx, cid in selections:
+        if model_idx < 0 or model_idx >= n:
+            continue
+        cat = cat_for_cid.get(cid, "Other")
+        if cat not in grid:
+            grid[cat] = [[] for _ in range(n)]
+            if cat not in categories:
+                categories.append(cat)
+        title = labels.get(cid, cid)
+        if title not in grid[cat][model_idx]:
+            grid[cat][model_idx].append(title)
+
+    cells = [grid[cat] for cat in categories]
+    cols = [f"Model {chr(65 + i)}" for i in range(n)]
+    return ArenaChecklist(col_headers=cols, row_headers=categories, cells=cells)
+
+
+def selections_with_titles(
+    selections: list[tuple[int, str]],
+    rule_labels: dict[str, str] | None = None,
+) -> list[tuple[int, str, str]]:
+    """(model_idx, choice_id, title) for chip display."""
+    labels = rule_labels or {}
+    return [(m, c, labels.get(c, c)) for m, c in selections]
 
 
 def checklist_signature(entry: dict) -> str:

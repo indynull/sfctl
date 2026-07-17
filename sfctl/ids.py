@@ -24,6 +24,57 @@ JUST_EDITOR = "justification-editor"
 JUST_PREVIEW = "justification-preview"
 JUST_RANKINGS = "just-rankings"
 
+# Arena multi-field justification widget ids (suffix = field key).
+# Namespace ``-u`` is used on the unified-view overview so those widgets can
+# coexist with the dedicated overview (same ContentSwitcher DOM).
+ARENA_CHECKLIST = "arena-checklist"
+ARENA_VIOLATION_CHIPS = "arena-violation-chips"
+ARENA_MARK_CQ = "arena-mark-cq"
+VIOLATION_WHY_MODAL = "violation-why-modal"
+VIOLATION_WHY_INPUT = "violation-why-input"
+CHECKLIST_MARK_MODAL = "checklist-mark-modal"
+CHECKLIST_MARK_FILTER = "checklist-mark-filter"
+CHECKLIST_MARK_LIST = "checklist-mark-list"
+CHECKLIST_MARK_MODEL = "checklist-mark-model"
+UNIFIED_NS = "-u"
+
+
+def with_ns(widget_id: str, ns: str = "") -> str:
+    """Append a view namespace (e.g. unified ``-u``) to a base widget id."""
+    return f"{widget_id}{ns}" if ns else widget_id
+
+
+def just_preview_id(key: str, ns: str = "") -> str:
+    return with_ns(f"just-preview-{key}", ns)
+
+
+def just_editor_id(key: str, ns: str = "") -> str:
+    return with_ns(f"just-editor-{key}", ns)
+
+
+def just_section_id(key: str, ns: str = "") -> str:
+    return with_ns(f"just-section-{key}", ns)
+
+
+def justification_key_from_widget_id(wid: str) -> str | None:
+    """Parse arena field key from a just-* widget id (with optional -u ns)."""
+    for prefix in ("just-preview-", "just-section-", "just-editor-"):
+        if not wid.startswith(prefix):
+            continue
+        rest = wid[len(prefix) :]
+        if rest.endswith(UNIFIED_NS):
+            rest = rest[: -len(UNIFIED_NS)]
+        return rest or None
+    if wid in (JUST_PREVIEW, with_ns(JUST_PREVIEW, UNIFIED_NS)):
+        return ""
+    return None
+
+
+def violation_chip_id(model_idx: int, choice_id: str, ns: str = "") -> str:
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in choice_id)
+    return with_ns(f"viol-chip-{model_idx}-{safe}", ns)
+
+
 YANK_MODAL = "yank-comment-modal"
 YANK_PREVIEW = "yank-preview"
 YANK_COMMENT = "yank-comment"
@@ -49,6 +100,12 @@ DIFF_SEARCH_LIST = "diff-search-list"
 EVENT_SEARCH_MODAL = "event-search-modal"
 EVENT_SEARCH_INPUT = "event-search-input"
 EVENT_SEARCH_LIST = "event-search-list"
+
+SHARED_COMPARE_MODAL = "shared-compare-modal"
+SHARED_FILE_LIST = "shared-file-list"
+SHARED_COMPARE_SUMMARY = "shared-compare-summary"
+SHARED_COMPARE_PATCHES = "shared-compare-patches"
+TAB_SHARED = "tab-shared"
 
 
 

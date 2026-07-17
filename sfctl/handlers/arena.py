@@ -5,21 +5,26 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from rich.markdown import Markdown as RichMarkdown
-from textual.widgets import Static
+from textual.containers import Vertical
+from textual.widgets import Button, Markdown, Static, TextArea
 
 from sfctl import ids, ranking
 from sfctl.arena import (
+    EDITABLE_JUSTIFICATION_KEYS,
     arena_checklist_change_lines,
     arena_justification_diff_texts,
     arena_ranking_changes,
     checklist_from_entry,
+    checklist_from_selections,
     checklist_violation_summary,
-    combined_justification,
+    empty_justification_hint,
     format_arena_history_meta,
     format_checklist_table,
     has_arena_changes,
     justification_sections,
     parse_arena_meta,
+    section_header_hint,
+    selections_with_titles,
 )
 from sfctl.cq_viewport import (
     RESPONSE_WIDTH_CLASS,
@@ -35,16 +40,16 @@ if TYPE_CHECKING:
 
 
 class ArenaHandler(RankingHandler):
-    """Arena ranking: 3-model review with checklist and split justifications.
+    """Arena ranking: 3-model review with checklist and multi-field justifications.
 
-    Model panes (response / trace / diffs) match classic ranking. Overview and
-    history are read-only surfaces for multi-field annotations.
+    Model panes (response / trace / diffs) match classic ranking. Overview has
+    three editable sections (response / code / overall) plus interactive
+    checklist-violation chips that append notes under model headings.
     """
 
     def __init__(self, app: StarfleetApp, data: dict) -> None:
         super().__init__(app, data)
         self.meta = parse_arena_meta(data)
-        # When True, response is framed at RESPONSE_TERMINAL_WIDTH columns.
         self.narrow_response: bool = False
 
     def model_header_label(self, idx: int) -> str:
@@ -79,7 +84,7 @@ class ArenaHandler(RankingHandler):
 
     def _apply_response_width(self) -> None:
         """Add or remove terminal-width + center classes on mounted response widgets."""
-        from textual.containers import Vertical
+        from textual.containers import Vertical as Vert
 
         app = self._app
         for idx in range(len(app.models)):
@@ -93,7 +98,7 @@ class ArenaHandler(RankingHandler):
                 except Exception:
                     body = None
                 try:
-                    wrap = app.query_one(f"#{wrap_id}", Vertical)
+                    wrap = app.query_one(f"#{wrap_id}", Vert)
                 except Exception:
                     wrap = None
                 if body is not None:
@@ -111,56 +116,153 @@ class ArenaHandler(RankingHandler):
         history = self._app._get_history()
         return history[-1] if history else {}
 
-    def _checklist_widgets(self, entry: dict, *, heading: str) -> list:
-        """Read-only clarity checklist table for a history entry."""
-        cl = checklist_from_entry(entry, self.meta.rule_labels)
-        if not cl:
-            return [Static("[dim]No clarity checklist in latest history.[/dim]")]
-        return [
-            Static(heading),
-            Static(format_checklist_table(cl)),
-        ]
-
-    async def populate_overview(self, pane: TabPane) -> None:
+    def _local_checklist(self):
+        """Checklist table built from local code-quality selections."""
         app = self._app
-        latest = self._latest_entry()
-        widgets: list = [
-            Static(app.rankings_summary(), id=ids.JUST_RANKINGS),
-        ]
-        widgets.extend(
-            self._checklist_widgets(
-                latest, heading="[bold]Clarity checklist[/bold]"
-            )
+        n = min(3, max(1, len(app.models)))
+        return checklist_from_selections(
+            app.review.checklist_selections,
+            self.meta.checklist_catalog,
+            n_models=n,
+            rule_labels=self.meta.rule_labels,
         )
 
-        sections = justification_sections(latest)
-        if sections:
-            for label, text in sections:
-                widgets.append(Static(f"[bold]{label}[/bold]", classes="section-title"))
-                widgets.append(Static(RichMarkdown(text)))
-        else:
-            widgets.append(Static("[dim]No justifications in latest history.[/dim]"))
+    def _checklist_widgets(
+        self, entry: dict, *, heading: str, table_id: str | None = None
+    ) -> list:
+        """Clarity checklist table (history entry or empty placeholder)."""
+        cl = checklist_from_entry(entry, self.meta.rule_labels)
+        if not cl:
+            return [Static("[dim]No clarity checklist in this history entry.[/dim]")]
+        table = (
+            Static(format_checklist_table(cl), id=table_id)
+            if table_id
+            else Static(format_checklist_table(cl))
+        )
+        return [
+            Static(heading, classes="section-title"),
+            table,
+        ]
 
-        await pane.mount_all(widgets)
+    def _preview_body(self, key: str) -> str:
+        text = self._app.review.justification_text(key).strip()
+        return text if text else empty_justification_hint(key)
+
+    async def populate_overview(self, pane: TabPane) -> None:
+        await self._mount_current_overview(pane, ns="")
 
     async def populate_unified_overview(self, pane: TabPane) -> None:
+        # Same CQ + multi-field editors as the dedicated overview (unique -u ids).
+        await self._mount_current_overview(pane, ns=ids.UNIFIED_NS)
+
+    async def _mount_current_overview(self, pane: TabPane, *, ns: str) -> None:
+        """Mount rankings, checklist, chips, and editable justifications.
+
+        *ns* is ``\"\"`` for the main overview or ``ids.UNIFIED_NS`` for the
+        unified-view strip so both can exist in the ContentSwitcher DOM.
+        """
+        app = self._app
         latest = self._latest_entry()
-        widgets: list = []
-        cl = checklist_from_entry(latest, self.meta.rule_labels)
+        await pane.mount(
+            Static(app.rankings_summary(), id=ids.with_ns(ids.JUST_RANKINGS, ns))
+        )
+
+        cl = self._local_checklist()
+        await pane.mount(
+            Static(
+                "[bold]Clarity Checklist[/bold]  "
+                "[dim]v mark rule · chips note why[/dim]",
+                classes="section-title",
+            )
+        )
+        checklist_id = ids.with_ns(ids.ARENA_CHECKLIST, ns)
         if cl:
-            widgets.extend(
-                self._checklist_widgets(
-                    latest, heading="[bold]Clarity checklist[/bold]"
+            await pane.mount(Static(format_checklist_table(cl), id=checklist_id))
+        else:
+            await pane.mount(
+                Static(
+                    "[dim]No violations marked — press v on a model response "
+                    "(or overview) to mark code quality rules.[/dim]",
+                    id=checklist_id,
                 )
             )
 
-        just = combined_justification(latest)
-        if just:
-            widgets.append(Static("[bold]Justifications[/bold]"))
-            widgets.append(Static(RichMarkdown(just)))
+        await pane.mount(
+            Static(
+                "[bold]Marked Violations[/bold]  "
+                "[dim]v to add or clear · Enter on chip notes Response[/dim]",
+                classes="section-title",
+            )
+        )
+        chip_row = Vertical(
+            id=ids.with_ns(ids.ARENA_VIOLATION_CHIPS, ns),
+            classes="violation-chip-row",
+        )
+        await pane.mount(chip_row)
+        from sfctl.badges import badge_css_classes
 
-        if widgets:
-            await pane.mount_all(widgets)
+        await chip_row.mount(
+            Button(
+                "+ Mark Code Quality",
+                classes=badge_css_classes("primary", "violation-chip", "violation-mark"),
+                compact=True,
+                flat=True,
+            )
+        )
+        for model_idx, _choice_id, title in selections_with_titles(
+            app.review.checklist_selections, self.meta.rule_labels
+        ):
+            letter = ids.model_letter(model_idx)
+            short = title if len(title) <= 42 else title[:39] + "…"
+            btn = Button(
+                f"{letter}  {short}",
+                classes=badge_css_classes("error", "violation-chip"),
+                compact=True,
+                flat=True,
+            )
+            btn._viol_model = model_idx  # type: ignore[attr-defined]
+            btn._viol_label = title  # type: ignore[attr-defined]
+            btn.tooltip = f"Note why · {letter} · {title}"
+            await chip_row.mount(btn)
+
+        for sec_label, sec_text in justification_sections(latest):
+            if sec_label != "Prompt Understanding":
+                continue
+            await pane.mount(
+                Static(
+                    "[bold]Prompt Understanding[/bold]  [dim]server[/dim]",
+                    classes="section-title",
+                )
+            )
+            await pane.mount(Static(RichMarkdown(sec_text)))
+            break
+
+        for key, label in EDITABLE_JUSTIFICATION_KEYS:
+            hint = section_header_hint(key)
+            body = self._preview_body(key)
+            section = Vertical(
+                id=ids.just_section_id(key, ns), classes="just-section"
+            )
+            await pane.mount(section)
+            await section.mount(
+                Static(
+                    f"[bold]{label}[/bold]  [dim]{hint}[/dim]",
+                    classes="section-title",
+                ),
+                Markdown(
+                    body,
+                    id=ids.just_preview_id(key, ns),
+                    classes="just-preview",
+                ),
+                TextArea(
+                    app.review.justification_text(key),
+                    language="markdown",
+                    show_line_numbers=True,
+                    id=ids.just_editor_id(key, ns),
+                    classes="just-editor",
+                ),
+            )
+            app.query_one(f"#{ids.just_editor_id(key, ns)}", TextArea).display = False
 
     def history_header(self, entry: dict, idx: int) -> Static:
         w = Static(
@@ -217,11 +319,11 @@ class ArenaHandler(RankingHandler):
 
     def scoreboard_parts(self) -> list[str]:
         app = self._app
-        rank_str = ranking.rankings_summary(app.scores, app.data.get("history", []))
+        rank_str = ranking.rankings_summary(app.scores, app._get_history())
         parts: list[str] = []
         if rank_str:
             parts.append(rank_str)
-        history = app.data.get("history") or []
+        history = app._get_history()
         if history:
             cl = checklist_from_entry(history[-1], self.meta.rule_labels)
             if cl:
@@ -231,4 +333,4 @@ class ArenaHandler(RankingHandler):
         return parts
 
     def hidden_actions(self) -> frozenset[str]:
-        return frozenset({"go_model_proposal", "edit_justification"})
+        return frozenset({"go_model_proposal"})

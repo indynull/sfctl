@@ -14,6 +14,28 @@ def to_label(item_id: str) -> str:
     return cleaned.upper() if len(cleaned) <= 2 else cleaned.title()
 
 
+def as_history_list(raw: object) -> list:
+    """Normalize history payloads to a list of entry dicts.
+
+    Clean/unreviewed tasks may return null, {}, or a single object instead of [].
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [h for h in raw if isinstance(h, dict)]
+    if isinstance(raw, dict):
+        if not raw:
+            return []
+        if all(isinstance(k, str) and k.isdigit() for k in raw):
+            return [
+                raw[k]
+                for k in sorted(raw, key=lambda x: int(x))
+                if isinstance(raw[k], dict)
+            ]
+        return [raw]
+    return []
+
+
 def get_full_ranking(entry: dict, key: str) -> str:
     """Return ranking as 'A > B > C' with rank colors, or empty string if not available."""
     ranking = entry.get(key)
@@ -98,8 +120,13 @@ def history_ranking_changes(prev: dict, curr: dict) -> list[str]:
 
 def _justification_value(entry: dict) -> str:
     """Extract the justification string from a history entry."""
-    val = (entry.get("justification") or {}).get("value", "")
-    return val if isinstance(val, str) else ""
+    raw = entry.get("justification")
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, dict):
+        val = raw.get("value", "")
+        return val if isinstance(val, str) else ""
+    return ""
 
 
 def history_justification_texts(prev: dict, curr: dict) -> tuple[str, str] | None:

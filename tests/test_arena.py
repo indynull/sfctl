@@ -75,12 +75,44 @@ class TestArenaParse:
         entry = arena_data["history"][0]
         sections = justification_sections(entry)
         labels = {lab for lab, _ in sections}
-        assert "Prompt understanding" in labels
-        assert "Response justification" in labels
-        assert "Code justification" in labels
+        assert "Prompt Understanding" in labels
+        assert "Response Justification" in labels
+        assert "Code Justification" in labels
         combined = combined_justification(entry)
-        assert "## Prompt understanding" in combined
-        assert "## Code justification" in combined
+        assert "## Prompt Understanding" in combined
+        assert "## Code Justification" in combined
+
+    def test_append_violation_note(self):
+        from sfctl.arena import append_violation_note
+
+        out = append_violation_note(
+            "",
+            model_letter="C",
+            rule_label="No bloated body",
+            why="wall of text",
+        )
+        assert "### Model C" in out
+        assert "#### No bloated body" in out
+        assert "wall of text" in out
+
+        existing = "### Model A\n\n#### Prior rule\n\n"
+        out2 = append_violation_note(
+            existing,
+            model_letter="A",
+            rule_label="No wall of text",
+            why="",
+        )
+        assert "#### Prior rule" in out2
+        assert "#### No wall of text" in out2
+        assert out2.index("Prior rule") < out2.index("No wall of text")
+
+    def test_list_checklist_violations(self, arena_data):
+        from sfctl.arena import list_checklist_violations, parse_arena_meta
+
+        meta = parse_arena_meta(arena_data)
+        entry = arena_data["history"][0]
+        viols = list_checklist_violations(entry, meta.rule_labels)
+        assert any(idx == 2 and "bloated" in title.lower() for idx, _cid, title in viols)
 
     def test_has_changes_on_checklist(self, arena_data):
         from sfctl.arena import has_arena_changes
@@ -119,19 +151,272 @@ class TestArenaHandler:
         joined = " ".join(parts)
         assert "Checklist" in joined or "C:1" in joined
 
-    def test_hidden_edit_justification(self, arena_data, make_app):
+    def test_edit_justification_enabled(self, arena_data, make_app):
         app = make_app(task_id=arena_data["task"]["taskId"], data=arena_data)
-        assert "edit_justification" in app.handler.hidden_actions()
+        assert "edit_justification" not in app.handler.hidden_actions()
 
     @pytest.mark.asyncio
-    async def test_overview_mounts_readonly(self, arena_data, make_app):
+    async def test_overview_mounts_multi_editors(self, arena_data, make_app):
         app = make_app(task_id=arena_data["task"]["taskId"], data=arena_data)
         async with app.run_test() as pilot:
             await pilot.pause()
-            # Overview should populate without justification editor
+            from textual.widgets import Button, TextArea
+
+            for key in (
+                "response_justification",
+                "code_quality_justification",
+                "overall_justification",
+            ):
+                editor = app.query_one(f"#just-editor-{key}", TextArea)
+                assert editor.display is False
+                preview = app.query_one(f"#just-preview-{key}")
+                assert preview is not None
+
+            mark = [b for b in app.query(Button) if b.has_class("violation-mark")]
+            assert len(mark) == 1
+            chips = [
+                b
+                for b in app.query(Button)
+                if b.has_class("violation-chip") and not b.has_class("violation-mark")
+            ]
+            assert any("bloated" in str(c.label).lower() for c in chips)
+
+    def test_checklist_catalog_and_local_toggle(self, arena_data, make_app):
+        from sfctl.arena import checklist_from_selections, parse_checklist_catalog
+
+        questions = arena_data["content"]["questions"]
+        catalog = parse_checklist_catalog(questions)
+        assert len(catalog) >= 10
+        assert any(r.choice_id == "o4_violated" for r in catalog)
+
+        app = make_app(task_id=arena_data["task"]["taskId"], data=arena_data)
+        assert (2, "o4_violated") in app.review.checklist_selections
+        now_on = app.review.toggle_checklist_selection(0, "o1_violated")
+        assert now_on is True
+        assert (0, "o1_violated") in app.review.checklist_selections
+        now_off = app.review.toggle_checklist_selection(0, "o1_violated")
+        assert now_off is False
+
+        cl = checklist_from_selections(
+            app.review.checklist_selections,
+            catalog,
+            n_models=3,
+            rule_labels=app.handler.meta.rule_labels,
+        )
+        assert cl is not None
+        assert cl.row_headers
+
+    @pytest.mark.asyncio
+    async def test_edit_and_save_arena_section(self, arena_data, make_app):
+        app = make_app(task_id=arena_data["task"]["taskId"], data=arena_data)
+        async with app.run_test() as pilot:
+            await pilot.pause()
             from textual.widgets import TextArea
 
-            editors = list(app.query(TextArea))
-            # Arena overview is read-only: no justification editor widget
-            just_editors = [e for e in editors if e.id == "justification-editor"]
-            assert just_editors == []
+            await app.action_edit_justification()
+            await pilot.pause()
+            editor = app.query_one("#just-editor-response_justification", TextArea)
+            assert editor.display is True
+            editor.text = "### Model A\n\ncustom note\n"
+            app._editor.show_justification_preview("response_justification")
+            assert (
+                app.review.justification_text("response_justification")
+                == "### Model A\n\ncustom note\n"
+            )
+
+    @pytest.mark.asyncio
+    async def test_ctrl_e_cycles_arena_sections(self, arena_data, make_app):
+        app = make_app(task_id=arena_data["task"]["taskId"], data=arena_data)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            from textual.widgets import TextArea
+
+            await app.action_edit_justification()
+            await pilot.pause()
+            assert app.query_one(
+                "#just-editor-response_justification", TextArea
+            ).display is True
+            await app.action_edit_justification()
+            await pilot.pause()
+            assert app.query_one(
+                "#just-editor-response_justification", TextArea
+            ).display is False
+            assert app.query_one(
+                "#just-editor-code_quality_justification", TextArea
+            ).display is True
+            await app.action_edit_justification()
+            await pilot.pause()
+            assert app.query_one(
+                "#just-editor-overall_justification", TextArea
+            ).display is True
+
+    @pytest.mark.asyncio
+    async def test_click_opens_specific_justification(self, arena_data, make_app):
+        """Clicking a justification section opens that field's editor."""
+        app = make_app(task_id=arena_data["task"]["taskId"], data=arena_data)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            from textual.widgets import TextArea
+
+            await app.go_to("overview")
+            await pilot.pause()
+            preview = app.query_one("#just-preview-code_quality_justification")
+            app._try_edit_justification_from_widget(preview)
+            await pilot.pause()
+            # Worker may still be running; wait a beat.
+            for _ in range(10):
+                await pilot.pause()
+                ed = app.query_one(
+                    "#just-editor-code_quality_justification", TextArea
+                )
+                if ed.display:
+                    break
+            assert app.query_one(
+                "#just-editor-code_quality_justification", TextArea
+            ).display is True
+            assert app.query_one(
+                "#just-editor-response_justification", TextArea
+            ).display is False
+
+    @pytest.mark.asyncio
+    async def test_unified_overview_has_cq_and_justification_editors(
+        self, arena_data, make_app
+    ):
+        """Side-by-side overview mounts full CQ UI and multi-field editors."""
+        app = make_app(task_id=arena_data["task"]["taskId"], data=arena_data)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            from textual.widgets import Static, TextArea
+
+            from sfctl import ids as app_ids
+
+            await app.action_split_view()
+            await pilot.pause()
+            assert app._current_section == app_ids.UNIFIED_VIEW
+            # Namespaced widgets on unified overview.
+            app.query_one(f"#{app_ids.ARENA_CHECKLIST}-u", Static)
+            app.query_one(f"#{app_ids.ARENA_VIOLATION_CHIPS}-u")
+            app.query_one("#just-editor-response_justification-u", TextArea)
+            app.query_one("#just-preview-code_quality_justification-u")
+            await app.action_edit_justification()
+            await pilot.pause()
+            for _ in range(10):
+                await pilot.pause()
+                ed = app.query_one(
+                    "#just-editor-response_justification-u", TextArea
+                )
+                if ed.display:
+                    break
+            assert app.query_one(
+                "#just-editor-response_justification-u", TextArea
+            ).display is True
+            # Stays in unified view.
+            assert app._current_section == app_ids.UNIFIED_VIEW
+
+
+class TestChecklistMarkModal:
+    @pytest.mark.asyncio
+    async def test_digit_keys_switch_model_while_filter_focused(self):
+        """1/2/3 select models even when the filter Input has focus."""
+        from textual.app import App, ComposeResult
+        from textual.widgets import Input, Static
+
+        from sfctl import ids
+        from sfctl.arena import ChecklistRule
+        from sfctl.screens import ChecklistMarkModal
+
+        catalog = [
+            ChecklistRule(choice_id="r1", title="No wall of text", category="prose"),
+            ChecklistRule(
+                choice_id="r2", title="Clear structure", category="organisation"
+            ),
+        ]
+
+        class Host(App):
+            def compose(self) -> ComposeResult:
+                yield Static("host")
+
+            def on_mount(self) -> None:
+                self.push_screen(
+                    ChecklistMarkModal(
+                        catalog, [], n_models=3, initial_model=0, lock_model=False
+                    ),
+                    lambda _r: None,
+                )
+
+        app = Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ChecklistMarkModal)
+            filt = modal.query_one(f"#{ids.CHECKLIST_MARK_FILTER}", Input)
+            # Focus filter so we exercise digit intercept on the Input.
+            filt.focus()
+            await pilot.pause()
+            assert modal._model_idx == 0
+
+            await pilot.press("2")
+            await pilot.pause()
+            assert modal._model_idx == 1
+            assert filt.value == ""
+
+            await pilot.press("3")
+            await pilot.pause()
+            assert modal._model_idx == 2
+            assert filt.value == ""
+
+            await pilot.press("1")
+            await pilot.pause()
+            assert modal._model_idx == 0
+
+            await pilot.press("w")
+            await pilot.pause()
+            assert filt.value == "w"
+
+    @pytest.mark.asyncio
+    async def test_locked_model_ignores_digit_switch(self):
+        """From a model response, v locks to that model — digits do not retarget."""
+        from textual.app import App, ComposeResult
+        from textual.widgets import Static
+
+        from sfctl.arena import ChecklistRule
+        from sfctl.screens import ChecklistMarkModal
+
+        catalog = [
+            ChecklistRule(choice_id="r1", title="No wall of text", category="prose"),
+        ]
+        toggles: list[tuple[int, str, bool]] = []
+
+        class Host(App):
+            def compose(self) -> ComposeResult:
+                yield Static("host")
+
+            def on_mount(self) -> None:
+                self.push_screen(
+                    ChecklistMarkModal(
+                        catalog,
+                        [],
+                        n_models=3,
+                        initial_model=1,
+                        lock_model=True,
+                        on_toggle=lambda m, c, s: toggles.append((m, c, s)),
+                    ),
+                    lambda _r: None,
+                )
+
+        app = Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ChecklistMarkModal)
+            assert modal._model_idx == 1
+            assert modal._lock_model
+            await pilot.press("1")
+            await pilot.pause()
+            assert modal._model_idx == 1
+            await pilot.press("enter")
+            await pilot.pause()
+            assert toggles and toggles[0][0] == 1
+            assert toggles[0][2] is True
+            # Modal stays open for multi-mark.
+            assert isinstance(app.screen, ChecklistMarkModal)
