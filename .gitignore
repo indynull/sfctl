@@ -23,3 +23,14 @@ wheels/
 !/uv.lock
 !/sfctl/
 !/tests/
+
+# Design notes (project docs)
+!/docs/
+!/docs/**
+
+# Built design papers
+docs/*.pdf
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc

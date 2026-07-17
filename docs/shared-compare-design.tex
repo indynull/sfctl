@@ -1,0 +1,1061 @@
+% !TEX program = xelatex
+% !TEX encoding = UTF-8
+% Path, Site, Design --- multi-model code evaluation.
+% Build: xelatex shared-compare-design.tex && xelatex shared-compare-design.tex
+\documentclass[
+  11pt,
+  a4paper,
+  oneside,
+  numbers=noenddot,
+  abstract=true,
+  headings=normal,
+  DIV=11,
+  BCOR=0mm,
+]{scrartcl}
+
+\usepackage{fontspec}
+\usepackage{unicode-math}
+
+\setmainfont{texgyrepagella}[
+  Extension=.otf,
+  UprightFont=*-regular,
+  ItalicFont=*-italic,
+  BoldFont=*-bold,
+  BoldItalicFont=*-bolditalic,
+  Ligatures=TeX,
+]
+\setsansfont{texgyreheros}[
+  Extension=.otf,
+  UprightFont=*-regular,
+  ItalicFont=*-italic,
+  BoldFont=*-bold,
+  BoldItalicFont=*-bolditalic,
+  Scale=MatchLowercase,
+  Ligatures=TeX,
+]
+\setmonofont{texgyrecursor}[
+  Extension=.otf,
+  UprightFont=*-regular,
+  ItalicFont=*-italic,
+  BoldFont=*-bold,
+  BoldItalicFont=*-bolditalic,
+  Scale=MatchLowercase,
+]
+\setmathfont{texgyrepagella-math.otf}
+
+\usepackage{setspace}
+\setstretch{1.07}
+\usepackage{microtype}
+\usepackage{parskip}
+\KOMAoptions{parskip=half-}
+\setkomafont{disposition}{\rmfamily\bfseries}
+\setkomafont{section}{\Large}
+\setkomafont{subsection}{\large}
+\setkomafont{subsubsection}{\normalsize}
+
+\RedeclareSectionCommand[
+  beforeskip=1.5em plus 0.25em minus 0.1em,
+  afterskip=0.55em plus 0.1em,
+]{section}
+\RedeclareSectionCommand[
+  beforeskip=1.1em plus 0.2em minus 0.1em,
+  afterskip=0.4em plus 0.1em,
+]{subsection}
+
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage{etoolbox}
+
+\definecolor{rulegray}{HTML}{4A4A4A}
+\definecolor{linkblue}{HTML}{1A5276}
+\definecolor{codecode}{HTML}{1C1C1C}
+\definecolor{codebg}{HTML}{F4F4F2}
+\definecolor{codeframe}{HTML}{D0D0C8}
+\definecolor{accent}{HTML}{2C3E50}
+\definecolor{muted}{HTML}{666666}
+
+\captionsetup{font=small, labelfont={bf,sf}, labelsep=period, skip=0.45em}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize\color{codecode},
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  aboveskip=0.65em,
+  belowskip=0.65em,
+  xleftmargin=0.55em,
+  xrightmargin=0.55em,
+  backgroundcolor=\color{codebg},
+  captionpos=b,
+  tabsize=2,
+}
+
+\usepackage[
+  colorlinks=true,
+  linkcolor=accent,
+  citecolor=accent,
+  urlcolor=linkblue,
+  bookmarks=true,
+  bookmarksnumbered=true,
+  pdftitle={Path, Site, Design: Multi-Model Code Evaluation},
+  pdfauthor={Design Proposal},
+  pdfsubject={Comparison geometry for ranking peer code patches},
+  pdfkeywords={model evaluation, code generation, multi-agent, ranking, diffs},
+]{hyperref}
+\usepackage{bookmark}
+
+\setlength{\headheight}{22pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{muted}\textit{Path\,$\rightarrow$\,Site\,$\rightarrow$\,Design}}
+\fancyhead[R]{\small\color{muted}Multi-Model Code Evaluation}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[C]{\small\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{construction}[definition]{Construction}
+\theoremstyle{plain}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{example}[definition]{Example}
+
+\newcommand{\PathSiteDesign}{\textbf{path\,$\rightarrow$\,site\,$\rightarrow$\,design}}
+\newcommand{\PSD}{\textsc{Psd}}
+\newcommand{\badge}[1]{\texttt{#1}}
+\newcommand{\BodyKey}{\mathrm{BodyKey}}
+\newcommand{\Badge}{\mathrm{Badge}}
+
+\setlength{\itemsep}{0.22em}
+\setlength{\parsep}{0.12em}
+\setlength{\topsep}{0.35em}
+
+\title{Path, Site, Design:\\
+Locating Agreement in Multi-Model Code Evaluation}
+\subtitle{A comparison geometry for ranking peer patches\\
+--- with formal properties, a benchmark sketch, and product patterns}
+\author{Technical Proposal\\[0.35em]
+{\normalsize Multi-Model Code Evaluation \& Preference Interfaces}}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{plain}
+
+\vspace{-1.1em}
+{\color{rulegray}\hrule height 0.6pt}
+\vspace{1.0em}
+
+\begin{abstract}
+Language models that write code are increasingly evaluated not only by
+unit tests and reference similarity, but by \emph{human preference among
+peer solutions} to the same software-engineering task. When $N$ models
+each emit a multi-file patch against a shared repository base, existing
+interfaces force raters either to open $N$ independent review tabs or to
+treat the problem as a merge. Both miss the unit that preference
+justifications actually need: \emph{the same base location under alternate
+designs}.
+
+We propose \PathSiteDesign{} (\PSD{}), a comparison geometry for
+multi-model code evaluation. Paths are triaged by coverage and change
+class; multi-model edits are partitioned into \emph{sites} (base-anchored
+hunk groups) and \emph{designs} (body-equivalence classes at a site).
+Agreement is defined only at a site, never by global token overlap. We
+state the core model formally, prove elementary soundness properties
+(totality of path triage, site-local agreement, stability of badges under
+presentation filters), and show that a natural token-set baseline invents
+false agreement that \PSD{} refuses.
+
+We sketch \textbf{\PSD{}-Bench}, a benchmark of multi-model patch tuples
+with gold site/design labels and ranking-relevant annotations, and report
+an evaluation on synthetic adversaries plus a corpus of real multi-model
+agent patches ($104$ paths, $136$ core sites): token-level locus conflation
+is common ($17$ multi-locus paths), while true multi-model path agreement
+is rare ($2$ of $104$). Finally we extract product patterns for evaluation
+platforms, IDE multi-agent UIs, and preference-data pipelines---independent
+of any single viewer implementation.
+\end{abstract}
+
+\vspace{0.5em}
+{\color{rulegray}\hrule height 0.4pt}
+\vspace{0.7em}
+
+\tableofcontents
+\clearpage
+
+%======================================================================
+\section{Introduction}
+\label{sec:intro}
+
+\subsection{From scoring code to ranking peer patches}
+
+Benchmarks for code generation historically emphasize functional
+correctness, reference match, and efficiency~\cite{zheng2024survey,effibench}.
+A parallel evaluation mode is growing: \emph{preference among peer
+solutions} produced by different models or agents for one task. Preference
+data trains reward models and steers product ranking; written
+justifications document \emph{where} and \emph{why} one design wins.
+
+In software-engineering settings the unit of solution is often a
+\textbf{patch}---a multi-file unified diff against a shared base tree---not
+a single function completion. Human raters must therefore compare $N$ peer
+patches. This is \emph{model code evaluation by ranking}, not integration.
+
+\subsection{What breaks today}
+
+Three dominant interface families fail this task in different ways:
+
+\begin{enumerate}
+  \item \textbf{Independent review tabs.} Each model gets its own ``Files
+        changed'' view. Raters search by path; multi-file tasks bury the
+        loci of conceptual disagreement.
+  \item \textbf{Whole-solution pickers.} Best-of-$N$ product UIs show full
+        transcripts or apply-one-patch buttons. Holistic preference is
+        easy; site-level evidence for written justification is not.
+  \item \textbf{Merge tools.} Three-way merge and multi-pane conflict
+        UIs~\cite{mens2002survey,khanna2007unified} optimize
+        \emph{resolution into one tree}. Ranking needs the opposite:
+        preserve mutually exclusive designs at one base location.
+\end{enumerate}
+
+A fourth failure mode is algorithmic rather than interactive:
+\textbf{token-set ``Shared''} over a file (or over all added lines) marks
+agreement whenever models insert the same tokens, even in different
+functions. That invents false consensus and poisons both UI chrome and
+automatic agreement metrics.
+
+\subsection{Contribution}
+
+We introduce \PathSiteDesign{} (\PSD{}), a comparison geometry for
+multi-model code evaluation:
+
+\begin{enumerate}
+  \item \textbf{Model.} Paths $\rightarrow$ sites $\rightarrow$ designs,
+        with a total path-triage function and site relations defined from
+        body keys at base anchors (Section~\ref{sec:model}).
+  \item \textbf{Properties.} Proofs that triage is total, that agreement
+        is site-local (hence token-set Shared is not implied), and that
+        path badges remain stable under optional presentation filters
+        (Section~\ref{sec:props}).
+  \item \textbf{Benchmark sketch.} \PSD{}-Bench: multi-model patch tuples
+        with gold labels for badges, sites, designs, and ranking-relevant
+        loci (Section~\ref{sec:bench}).
+  \item \textbf{Evaluation.} Synthetic adversaries and a corpus of real
+        multi-model agent patches (Section~\ref{sec:eval}).
+  \item \textbf{Product patterns.} Design patterns for evaluation
+        platforms, multi-agent IDEs, and preference pipelines---not tied
+        to one viewer (Section~\ref{sec:products}).
+\end{enumerate}
+
+\PSD{} is dual to multi-agent \emph{review} of a single change: there $N$
+lenses inspect one patch; here $N$ patches face one ranking objective.
+
+%======================================================================
+\section{Related Work and Positioning}
+\label{sec:related}
+
+\begin{table}[t]
+\centering
+\caption{Where \PSD{} sits among nearby systems. ``Agreement unit'' is what
+the tool treats as the same change when comparing alternatives.}
+\label{tab:position}
+\begin{tabular}{@{}p{2.6cm}p{1.6cm}p{2.0cm}p{2.0cm}p{3.4cm}@{}}
+\toprule
+\textbf{Family} & \textbf{Peers} & \textbf{Goal} & \textbf{Anchor} & \textbf{Agreement unit} \\
+\midrule
+Modern code review
+  & 1 tip & accept/reject & PR diff & single proposed patch \\
+Three-way merge / KDiff3
+  & 2 tips & integrate & common ancestor & conflict region \\
+\texttt{git range-diff}
+  & 2 series & revise series & commit & patch-series interdiff \\
+Structural / refactor diffs
+  & 1 tip & reduce noise & AST/symbol & one tip vs base \\
+Whole-solution BoN / arena UIs
+  & $N$ & pick winner & none / whole & entire solution \\
+Token-set ``Shared'' baselines
+  & $N$ & show overlap & none & bag of added lines \\
+\textbf{\PSD{} (this work)}
+  & $N$ & \textbf{rank} & base hunk line & \textbf{BodyKey at site} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Modern code review (MCR).}
+MCR studies cognitive load on multi-file diffs and the gap between hunks
+and design intent~\cite{bacchelli2013expectations,sadowski2018modern,wang2024roadmap}.
+Almost all tooling assumes \emph{one} proposed tip. We keep the
+patch-centric unit of review~\cite{janestreet2013patch} but lift it to
+$N$ peers on one objective.
+
+\paragraph{Merge and multi-version visualization.}
+Classical merging constructs one result from base and
+tips~\cite{mens2002survey,khanna2007unified}. Layout metaphors (side-by-side,
+ancestor) transfer; the objective does not. \PSD{} never emits a merged
+tree.
+
+\paragraph{Code evaluation and preference.}
+Surveys of LLM code evaluation stress execution and similarity
+metrics~\cite{zheng2024survey,effibench}. Human preference interfaces, when
+present, are often whole-solution or pairwise at output level. Multi-file
+agent patches are rarely first-class comparison objects.
+
+\paragraph{Gap.}
+No widely used evaluation stack simultaneously (i)~takes $N$ peer patches
+for one task, (ii)~anchors comparison at base hunk geometry, (iii)~defines
+designs as body-equivalence classes at a site, and (iv)~refuses
+token-level false agreement across unrelated locations
+(Table~\ref{tab:position}).
+
+%======================================================================
+\section{Problem Formulation}
+\label{sec:problem}
+
+\begin{definition}[Multi-model patch task]
+\label{def:task}
+Fix a base tree $T$ and models $M=\{0,\ldots,N-1\}$. Each model $i$ emits
+a set of path-indexed unified diffs $\{P_i(p)\}_{p\in\mathcal{P}_i}$ against
+$T$ (including pure-add new files and pure-delete removals). A
+\emph{ranking objective} asks a rater (human or automated judge) for an
+order on $M$ and optional free-text justification.
+\end{definition}
+
+\begin{definition}[Comparison layer]
+\label{def:layer}
+A comparison layer maps $\{P_i\}$ to a navigable structure supporting
+atomic judgments of the form
+\[
+  \text{``at path $p$, site $S$, design $D_j$ is preferable to $D_k$.''}
+\]
+It does \emph{not} produce a merged tree.
+\end{definition}
+
+\paragraph{Failure modes we design against.}
+\begin{itemize}
+  \item \textbf{Tab explosion:} $N$ full file lists; path search is manual.
+  \item \textbf{False Shared:} any shared added-token multiset counts as
+        agreement (e.g., both insert \texttt{return True} in different
+        functions).
+  \item \textbf{Merge bias:} UIs that push toward resolution rather than
+        ranking.
+  \item \textbf{Metric collapse:} automatic ``overlap scores'' that ignore
+        base location.
+\end{itemize}
+
+%======================================================================
+\section{The \PSD{} Model}
+\label{sec:model}
+
+\subsection{Coverage}
+
+\begin{definition}[Coverage]
+\label{def:coverage}
+Let $P_i(p)$ be model $i$'s patch for path $p$, or empty if absent.
+\[
+  C(p) \;=\; \{ i \in M \mid P_i(p) \neq \emptyset \}.
+\]
+\end{definition}
+
+\subsection{Hunks and body keys}
+
+\begin{definition}[Hunk]
+\label{def:hunk}
+A hunk $h$ is a unified-diff region with base start $\mathrm{old}(h)\in\mathbb{N}$,
+base span length $\mathrm{count}(h)\in\mathbb{N}$, and an ordered list of
+typed lines (context / add / delete).
+\end{definition}
+
+\begin{definition}[Body key]
+\label{def:bodykey}
+\[
+  \BodyKey(h)
+  \;=\;
+  \bigl(\,
+    \tau(\ell)\;\big|\;
+    \ell\text{ is add/del in }h,\;
+    \mathrm{strip}_{\mathrm{CR}}(\ell)\text{ is non-blank}
+  \,\bigr),
+\]
+where $\tau(\ell)$ is the kind-tagged text (\texttt{add:}$\ldots$ or
+\texttt{del:}$\ldots$). Context lines are excluded. Blank-only add/del
+noise is ignored so whitespace padding does not split designs.
+\end{definition}
+
+\subsection{Sites and designs}
+
+\begin{definition}[Core site]
+\label{def:site}
+For a path $p$, parse each $P_i(p)$ into hunks. For each base line
+$\ell\in\mathbb{N}$, the \emph{core site} at $\ell$ is the $N$-tuple
+\[
+  S_\ell
+  \;=\;
+  (h_0,\ldots,h_{N-1}),
+  \qquad
+  h_i
+  \;=\;
+  \begin{cases}
+    \text{first hunk of $i$ with $\mathrm{old}(h)=\ell$} & \text{if any}\\
+    \bot & \text{otherwise.}
+  \end{cases}
+\]
+Sites with all slots $\bot$ are dropped. Co-location in the
+\emph{normative core} is exact $\mathrm{old}(h)$ only.
+\end{definition}
+
+\begin{definition}[Designs and site relation]
+\label{def:design}
+Let $\mathrm{present}(S_\ell)=\{i\mid h_i\neq\bot\}$. Partition
+$\mathrm{present}(S_\ell)$ by equality of $\BodyKey(h_i)$. Each block is a
+\emph{design}. The site relation $\rho(S_\ell)$ is:
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+$\rho$ & condition \\
+\midrule
+\texttt{unique} & $|\mathrm{present}|=1$ \\
+\texttt{same} & one design, $\ge 2$ models \\
+\texttt{pair} & $N=3$ specialization: sizes $(2,1)$ \\
+\texttt{diverge} & $\ge 2$ designs (and not the pair pattern) \\
+\bottomrule
+\end{tabular}
+\end{center}
+For general $N$, the relation is the multiset of design sizes (a partition
+of $|\mathrm{present}|$); \texttt{pair} is the product name for type
+$2{+}1$ when $N=3$.
+\end{definition}
+
+\begin{remark}[Why exact $\mathrm{old}$ is normative]
+Peer patches against the \emph{same} base do not shift each other's
+\texttt{old\_start}. Misalignment comes from different hunkification of
+one conceptual region, not tip drift. Optional presentation layers may
+coalesce overlapping spans when BodyKeys do not conflict; they must not
+redefine the core (Section~\ref{sec:props}).
+\end{remark}
+
+\subsection{Path triage}
+
+\begin{definition}[Path badge]
+\label{def:badge}
+$\Badge(p)$ is defined by the total decision order:
+\begin{enumerate}
+  \item If $C(p)=\emptyset$: omit $p$.
+  \item Else if every present patch is a pure full-file delete: $\badge{del}$.
+  \item Else if every present patch is a pure full-file add: $\badge{new}$.
+  \item Else if $|C(p)|=1$: $\badge{solo}$ (single-model \emph{edit}).
+  \item Else if all present patches are equal after normalization
+        (strip CR; drop ``No newline at end of file'' markers): $\badge{same}$.
+  \item Else let $\mathcal{S}$ be the multi-present core sites
+        ($|\mathrm{present}|\ge 2$). If any has $\rho\in\{\texttt{diverge},\texttt{pair}\}$:
+        $\badge{diff}$. Else if any has $\rho=\texttt{same}$: $\badge{share}$.
+        Else: $\badge{diff}$.
+\end{enumerate}
+Normalization is encoding hygiene, not semantic equivalence.
+\end{definition}
+
+Full-file $\badge{new}$/$\badge{del}$ take precedence over $\badge{same}$:
+identical multi-model pure-adds remain $\badge{new}$; pure deletes remain
+$\badge{del}$. Path $\badge{share}$ requires multi-present agreement
+\emph{without} multi-present diverge/pair---partial agreement does not
+upgrade the path.
+
+\begin{example}[False Shared refused]
+\label{ex:false-shared}
+Models $A,B,C$ all insert the token \texttt{return True}, but $A$ and $C$
+at function $f_1$ (line $10$) while $B$ inserts it only at $f_2$ (line $80$),
+and bodies otherwise differ. Token-set intersection is nonempty, so a
+bag-of-lines baseline reports ``Shared.'' Core sites are $S_{10}$ and
+$S_{80}$ with relations \texttt{pair}/\texttt{diverge} as bodies dictate;
+no path-level Shared is invented. Empirically this adversary yields
+$\Badge=\badge{diff}$ with two pair sites (Section~\ref{sec:eval}).
+\end{example}
+
+\subsection{Presentation (non-normative)}
+
+Optional layers may (i)~drop non-signal sites (comment/punct filters),
+(ii)~coalesce span-overlapping sites without BodyKey conflict,
+(iii)~collapse identical fingerprints, (iv)~present multi-design sites as
+tabs under one linear anchor, (v)~compress near-identical pure-add full
+files for display. These affect \emph{detail UI density only}. They never
+recompute $\Badge(p)$ (Policy~A).
+
+%======================================================================
+\section{Properties}
+\label{sec:props}
+
+We treat patches as immutable inputs and $\BodyKey$ as a pure function of
+hunk lines as in Definition~\ref{def:bodykey}.
+
+\begin{proposition}[Totality of triage]
+\label{prop:total}
+For every path $p$ with $C(p)\neq\emptyset$, exactly one badge in
+$\{\badge{del},\badge{new},\badge{solo},\badge{same},\badge{share},\badge{diff}\}$
+is assigned.
+\end{proposition}
+
+\begin{proof}
+The decision order in Definition~\ref{def:badge} is a sequence of mutually
+exclusive guards covering all nonempty $C(p)$. Pure-delete and pure-add are
+checked before solo/identical; identical multi-edits before site analysis;
+the final site branch's outcomes all map to $\badge{share}$ or $\badge{diff}$.
+No fall-through remains.
+\end{proof}
+
+\begin{proposition}[Site-local agreement]
+\label{prop:local}
+Suppose models $i$ and $j$ both contain an add-line with identical text
+$t$ in path $p$, but only in hunks $h_i,h_j$ with
+$\mathrm{old}(h_i)\neq\mathrm{old}(h_j)$. Then there is no core site $S$
+at which $i$ and $j$ share a design solely because of $t$ appearing in both
+patches. In particular, a non-empty global intersection of added-token sets
+does not imply any site with $\rho=\texttt{same}$.
+\end{proposition}
+
+\begin{proof}
+Core sites are keyed only by $\mathrm{old}(\cdot)$
+(Definition~\ref{def:site}). Tokens at distinct base starts lie in distinct
+sites $S_{\ell}$ and $S_{\ell'}$. Within one site, designs depend on the
+full $\BodyKey$ of each present hunk (Definition~\ref{def:design}), not on
+membership of $t$ in a path-level set. Therefore path-level token
+intersection cannot create a $\texttt{same}$ site, and by
+Definition~\ref{def:badge} cannot by itself produce $\badge{share}$ or
+$\badge{same}$.
+\end{proof}
+
+\begin{corollary}[Token-set baseline is strictly coarser]
+\label{cor:token}
+Let $\mathrm{TokShared}(p)$ hold when
+$\bigcap_{i\in C(p)}\mathrm{Adds}(P_i(p))\neq\emptyset$ with $|C(p)|\ge 2$.
+There exist patch tuples for which $\mathrm{TokShared}(p)$ is true while
+$\Badge(p)\notin\{\badge{share},\badge{same}\}$ and no core site has
+$\rho=\texttt{same}$. (Example~\ref{ex:false-shared}.)
+\end{corollary}
+
+\begin{proposition}[Policy~A: badge stability under presentation]
+\label{prop:policyA}
+Let $\mathcal{S}_{\mathrm{core}}(p)$ be the core site list and
+$F$ any presentation map (filter/coalesce) such that:
+\begin{enumerate}
+  \item $F$ only drops sites or merges sites whose filled slots have
+        equal $\BodyKey$ pairwise per model;
+  \item $F$ never invents a new filled slot with a BodyKey not present in
+        some core site for that model.
+\end{enumerate}
+If $\Badge(p)$ is computed from $\mathcal{S}_{\mathrm{core}}$ as in
+Definition~\ref{def:badge}, then replacing $\mathcal{S}_{\mathrm{core}}$ by
+$F(\mathcal{S}_{\mathrm{core}})$ inside the badge function can change the
+badge only if an implementation \emph{violates} Policy~A. Under Policy~A,
+$\Badge(p)$ is independent of $F$.
+\end{proposition}
+
+\begin{proof}
+Immediate from the definition of Policy~A: the badge function's site
+branch is evaluated on $\mathcal{S}_{\mathrm{core}}$ only. The constraints
+on $F$ describe the intended presentation layer (no invented bodies); they
+are not required for independence once the badge is defined to ignore $F$.
+\end{proof}
+
+\begin{remark}
+Proposition~\ref{prop:policyA} is an interface contract as much as a
+theorem: products that recompute badges after filtering can flip
+$\badge{share}\leftrightarrow\badge{diff}$ when a lone agreeing site is
+dropped. That variant needs its own tests; it is not \PSD{}-core.
+\end{remark}
+
+\begin{lemma}[Design partition]
+\label{lem:partition}
+At each site $S$, the designs form a partition of $\mathrm{present}(S)$.
+Hence every present model appears in exactly one design card emission.
+\end{lemma}
+
+\begin{proof}
+Designs are equivalence classes under equality of $\BodyKey(h_i)$ on the
+finite set $\mathrm{present}(S)$.
+\end{proof}
+
+\begin{proposition}[Fallback completeness]
+\label{prop:fallback}
+If a multi-model edit path yields no core sites usable for detail
+emission, the comparison layer still exposes $|C(p)|$ per-model full-patch
+designs. Ranking remains possible; only site alignment is lost.
+\end{proposition}
+
+\begin{proof}
+By construction of the fallback (normative): emit one card per present
+model with patch text $P_i(p)$. Lemma~\ref{lem:partition} is vacuous;
+coverage $C(p)$ is unchanged.
+\end{proof}
+
+\paragraph{What we do not claim.}
+$\BodyKey$ equality is textual, not semantic or behavioral. Exact
+$\mathrm{old}$ co-location is incomplete w.r.t.\ human ``same function''
+judgments when diff tools split regions differently. \PSD{} makes that
+incompleteness explicit rather than papering over it with token sets.
+
+%======================================================================
+\section{Algorithms (Core)}
+\label{sec:algo}
+
+We give the normative core compactly. Indices are $0$-based; product UIs
+may map them to letters.
+
+\begin{lstlisting}[caption={Normative core: sites, body keys, path badge.},label={lst:core}]
+function BodyKey(h):
+    return tuple( kind:stripCR(text)
+                  for kind,text in add/del lines of h
+                  if strip(text) nonempty )
+
+function BuildSites(patches):          # exact old_start only
+    by_start := map ell -> array[N] of (hunk|bot)
+    for i in models:
+        for h in ParseHunks(patches[i]):
+            if by_start[h.old_start][i] is bot:
+                by_start[h.old_start][i] := h
+    return [ Site(ell, slots, Classify(slots))
+             for ell,slots in by_start sorted ]
+
+function Classify(slots):
+    present := {i | slots[i] != bot}
+    if |present| <= 1: return unique
+    keys := { BodyKey(slots[i]) | i in present }
+    if |keys| == 1: return same
+    # general N: return partition-type(keys);
+    # N=3 product: pair if type 2+1 else diverge
+    ...
+
+function Badge(patches):               # Policy A: core sites only
+    present := {i | patch i present}
+    if all pure-delete: return del
+    if all pure-add:    return new
+    if |present| == 1:  return solo
+    if all Normalize(patch i) equal: return same
+    multi := { s in BuildSites(patches) | |present(s)| >= 2 }
+    if any multi has relation in {diverge, pair}: return diff
+    if any multi has relation same:               return share
+    return diff
+\end{lstlisting}
+
+\paragraph{List geometry (evaluation UX).}
+Sort paths by kind rank
+($\badge{diff}\prec\badge{share}\prec\badge{new}\prec\badge{del}\prec\badge{same}\prec\badge{solo}$),
+then coverage rank, then path. Group consecutive rows that share
+$(\Badge, C(p))$ under one coverage header so ``who touched this'' is
+stated once per block. Detail views show one linear site sequence; when a
+site has $\ge 2$ designs, tabs switch bodies without stacking $N$ full
+walls.
+
+%======================================================================
+\section{\PSD{}-Bench: A Benchmark Sketch}
+\label{sec:bench}
+
+Evaluation of multi-model code systems needs more than pass@k. We propose
+\textbf{\PSD{}-Bench} as a dataset-and-metrics layer that any evaluation
+platform can adopt.
+
+\subsection{Instance schema}
+
+Each instance is a tuple
+\[
+  \bigl(T,\; q,\; (P_0,\ldots,P_{N-1}),\; G,\; R^\star\bigr)
+\]
+where $T$ is a base revision (or minimal virtual tree), $q$ a natural-language
+task, $P_i$ peer patches, $G$ gold comparison labels, and $R^\star$ an optional
+gold ranking / preference with justification spans.
+
+Gold $G$ includes, per path:
+\begin{itemize}
+  \item $\Badge^\star(p)$ and coverage $C(p)$;
+  \item core sites $\{(\ell,\rho^\star,\text{design partition}^\star)\}$;
+  \item flags: \texttt{false\_token\_shared} (token baseline errs),
+        \texttt{hunk\_misalign} (human same-region, distinct $\mathrm{old}$),
+        \texttt{fallback}.
+\end{itemize}
+
+\subsection{Splits}
+
+\begin{enumerate}
+  \item \textbf{Synthetic control.} Hand-crafted adversaries (false Shared;
+        identical pure-new vs $\badge{same}$; pair vs diverge; CRLF; partial
+        agreement $\Rightarrow$ $\badge{diff}$).
+  \item \textbf{Agent corpus.} Real multi-model patches on shared bases
+        (anonymized), gold labels from expert annotators using the \PSD{}
+        codebook.
+  \item \textbf{Stress.} Large new-file galleries, renames, binaries,
+        $N\in\{2,3,5\}$.
+\end{enumerate}
+
+\subsection{Metrics}
+
+\begin{table}[t]
+\centering
+\caption{Proposed \PSD{}-Bench metrics.}
+\label{tab:metrics}
+\begin{tabular}{@{}lp{9.2cm}@{}}
+\toprule
+\textbf{Metric} & \textbf{Definition} \\
+\midrule
+Badge macro-F1 & Per-class F1 of $\Badge$ vs $\Badge^\star$ \\
+Site anchor recall & Fraction of gold sites matched within exact
+  $\mathrm{old}$ (core) or span-IoU $\ge\tau$ (presentation) \\
+Design ARI & Adjusted Rand Index of design partitions at matched sites \\
+False Shared rate & Fraction of paths where token baseline claims Shared
+  but gold has no multi-present $\texttt{same}$ site \\
+Fallback rate & Multi-model edit paths with empty core sites \\
+Rank locality & Among pairs of models, fraction of gold preference
+  justifications spannable by a single site or path (upper bound on
+  UI sufficiency) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Baselines}
+
+\begin{itemize}
+  \item Independent file lists (no alignment).
+  \item Token-set Shared / Jaccard on added lines.
+  \item Pairwise \texttt{diff} of tips without base sites.
+  \item \PSD{}-core; \PSD{}-core$+$span coalesce (presentation).
+\end{itemize}
+
+\subsection{Why this is unique as an evaluation artifact}
+
+Existing code benchmarks score \emph{solutions}. Preference arenas score
+\emph{whole outputs}. Merge suites score \emph{integration}.
+\PSD{}-Bench scores the \textbf{comparison geometry} itself---the missing
+middle layer between raw patches and a ranking label. That layer is what
+product UIs and automated judges both need if justifications are to be
+faithful.
+
+%======================================================================
+\section{Evaluation}
+\label{sec:eval}
+
+We evaluate the \emph{core geometry} (not a particular pixel UI) on
+(1)~synthetic adversaries that encode the design principles, and
+(2)~a convenience corpus of real multi-model agent patch dumps available
+to this study.
+
+\subsection{Synthetic conformance}
+
+Table~\ref{tab:conform} summarizes control cases. All are decidable from
+Definitions~\ref{def:coverage}--\ref{def:badge}; an open-source conformance
+suite can lock them as fixtures.
+
+\begin{table}[t]
+\centering
+\caption{Core conformance scenarios (synthetic).}
+\label{tab:conform}
+\begin{tabular}{@{}clp{6.2cm}@{}}
+\toprule
+\# & Scenario & Expected core outcome \\
+\midrule
+1 & Multi-model identical edit & $\badge{same}$, one design \\
+2 & Multi-model identical pure-new & $\badge{new}$ (not $\badge{same}$) \\
+3 & Solo pure-delete & $\badge{del}$, removed body \\
+4 & Bodies $(2{+}1)$ at one $\mathrm{old}$ & site \texttt{pair}; path $\badge{diff}$ \\
+5 & One same site $+$ one diverge site & path $\badge{diff}$ \\
+6 & Same token at two functions & two sites; no Shared \\
+7 & No aligned sites & fallback cards; $\badge{diff}$ \\
+8 & Mid-file pure-adds & BodyKey at each $\mathrm{old}$ only \\
+9 & CRLF vs LF identical edits & $\badge{same}$ via Normalize \\
+10 & All sites unique, coverage ABC & $\badge{diff}$, ABC header \\
+11 & Same body, two $\mathrm{old}$ values & two sites (no core coalesce) \\
+12 & $N{=}2$, two bodies & site \texttt{diverge} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Adversary result (Example~\ref{ex:false-shared}).}
+On the cross-placed \texttt{return True} triple, token intersection is
+$\{\texttt{return True}\}$ (baseline would claim Shared) while \PSD{}
+reports $\badge{diff}$ with sites at lines $10$ and $80$, each
+\texttt{pair}---Proposition~\ref{prop:local} in action.
+
+\subsection{Corpus study}
+
+\paragraph{Material.}
+Six multi-model patch tasks ($N=3$ each) drawn from agent ranking dumps
+and public fixtures used in tooling tests: $104$ union paths after
+comparison, $28$ multi-model paths, $136$ core sites.
+
+\begin{table}[t]
+\centering
+\caption{Path badge distribution on the multi-model corpus ($104$ paths).}
+\label{tab:corpus-badges}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Badge} & \textbf{Count} & \textbf{Share} \\
+\midrule
+\badge{solo}  & 64 & 61.5\% \\
+\badge{diff}  & 22 & 21.2\% \\
+\badge{new}   & 16 & 15.4\% \\
+\badge{share} & 1  & 1.0\% \\
+\badge{same}  & 1  & 1.0\% \\
+\badge{del}   & 0  & 0.0\% \\
+\midrule
+Total & 104 & 100\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Site relations on the same corpus ($136$ core sites).}
+\label{tab:corpus-sites}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Relation} & \textbf{Count} & \textbf{Share} \\
+\midrule
+\texttt{unique} (\texttt{only}) & 91 & 66.9\% \\
+\texttt{diverge} & 35 & 25.7\% \\
+\texttt{pair} & 6 & 4.4\% \\
+\texttt{same} & 4 & 2.9\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Findings.}
+
+\begin{enumerate}
+  \item \textbf{True path-level multi agreement is rare.} Only $2/104$
+        paths are $\badge{share}$ or $\badge{same}$. Most multi-model
+        contact is partial or conflicting---exactly where site-level
+        designs matter.
+  \item \textbf{Token locus conflation is common.} On $17$ paths the same
+        nonempty add-token appears at $\ge 2$ distinct core starts under
+        multi-model coverage. A file-level token Shared baseline would
+        conflate loci on $\approx 16\%$ of all paths and a large fraction
+        of multi-model paths---Corollary~\ref{cor:token} at corpus scale.
+  \item \textbf{Solo dominates raw path count.} $61.5\%$ of paths are
+        single-model. List geometry should not spend equal chrome on every
+        row; coverage grouping and kind order push $\badge{diff}$ first.
+  \item \textbf{Site mass is real.} $136$ sites on $104$ paths
+        ($\approx 1.3$ sites/path overall; much higher on heavy
+        multi-model tasks) justify site navigation over whole-file only.
+\end{enumerate}
+
+\paragraph{Threats to validity.}
+Convenience corpus (not a published benchmark); $N=3$ only; no inter-rater
+study of gold labels; agent dumps may not match production traffic. These
+motivate \PSD{}-Bench rather than replace it.
+
+%======================================================================
+\section{Product Patterns for Future Systems}
+\label{sec:products}
+
+\PSD{} is a comparison geometry, not a single application. We extract
+patterns for builders of evaluation platforms, multi-agent IDEs, and data
+pipelines.
+
+\subsection{Pattern P1 --- Comparison object, not only score}
+
+\textbf{Problem.} Leaderboards store a scalar preference; justifications
+lose structure.\\
+\textbf{Design.} Persist $(p,S,D)$ references alongside rankings. Reward
+models and audit tools can attend to site-scoped evidence.\\
+\textbf{Why unique.} Elevates the comparison layer to a first-class
+evaluation artifact (Section~\ref{sec:bench}).
+
+\subsection{Pattern P2 --- Rank surface, merge surface}
+
+\textbf{Problem.} Teams reuse merge widgets for peer agents.\\
+\textbf{Design.} Separate modes: \emph{Rank} preserves exclusive designs
+(tabs/cards); \emph{Merge} is opt-in and never the default for preference
+collection.\\
+\textbf{Why unique.} Makes the objective mismatch explicit in UX copy and
+API names.
+
+\subsection{Pattern P3 --- Progressive disclosure}
+
+\textbf{Problem.} Flat $N$-pane file views do not scale.\\
+\textbf{Design.} path triage $\rightarrow$ coverage groups $\rightarrow$
+site anchors $\rightarrow$ design tabs. Keyboard jumps to each model's full
+patch remain available.\\
+\textbf{Why unique.} Aligns navigation cost with disagreement mass
+(corpus: few $\badge{share}$, many $\badge{diff}$/solo).
+
+\subsection{Pattern P4 --- Policy~A metrics}
+
+\textbf{Problem.} Presentation filters quietly change agreement dashboards.\\
+\textbf{Design.} Report badges and agreement rates from core sites only;
+publish filter configs separately.\\
+\textbf{Why unique.} Prevents ``improving'' agreement by dropping diverge
+sites.
+
+\subsection{Pattern P5 --- Anti-metrics}
+
+\textbf{Problem.} Jaccard-on-adds looks like quality of consensus.\\
+\textbf{Design.} Ban path-level token Shared as a primary metric; if shown,
+label as ``token overlap (not site agreement)'' and pair with False Shared
+rate from \PSD{}-Bench.\\
+\textbf{Why unique.} Stops a seductive but invalid KPI.
+
+\subsection{Pattern P6 --- Judge models with site prompts}
+
+\textbf{Problem.} LLM-as-judge sees concatenated patches and hallucinates
+shared intent.\\
+\textbf{Design.} Prompt judges per site with the design bodies only; ask
+for local preference; aggregate with explicit rules.\\
+\textbf{Why unique.} Transfers \PSD{} from human UI to automated evaluation.
+
+\subsection{Pattern P7 --- N-ready slots, named algebras}
+
+\textbf{Problem.} Hard-coded ABC pair logic blocks $N{>}3$.\\
+\textbf{Design.} Store sites as length-$N$ slot arrays; expose relation as
+partition type; keep ``pair'' as sugar for $2{+}1$ when $N=3$.\\
+\textbf{Why unique.} Separates geometry from product vocabulary.
+
+\subsection{Reference mapping}
+
+A keyboard-first shared-file compare view in ranking tools (e.g.\ open-source
+Starfleet Control) is one \emph{instance} of P2--P5. The geometry does not
+depend on that instance; any evaluation console or IDE multi-agent panel
+can implement the same contracts.
+
+%======================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Implications for model code evaluation}
+
+If the field cares about preference data on agentic coding, it must care
+about \textbf{where} models diverge. Pass@k does not say; whole-output
+arenas barely say; \PSD{} makes the locus explicit. That benefits human
+raters and structured automatic judges alike.
+
+\subsection{Relation to structural diff}
+
+AST-aware anchors could improve co-location when line numbers drift.
+They are compatible as an optional co-location oracle \emph{above} the
+core, subject to Policy~A. We keep line-level core first because unified
+diffs are the lingua franca of agent tools today.
+
+\subsection{Limitations}
+
+\begin{itemize}
+  \item Textual BodyKeys miss semantic equivalence (rename-only, formatting
+        tools, import reorder).
+  \item Exact $\mathrm{old}$ under-merges some human ``same edit'' pairs.
+  \item Corpus evaluation is exploratory; \PSD{}-Bench is a proposal.
+  \item General-$N$ relation UX is underspecified beyond partition types.
+\end{itemize}
+
+\subsection{Rejected alternatives}
+
+\begin{itemize}
+  \item Token-set Shared over files or mid-file pure-add sites.
+  \item Pairwise-only screens without simultaneous multi-design sites.
+  \item Always-on $N$-pane full files as the primary surface.
+  \item Merge layout as the default preference surface.
+  \item Path $\badge{share}$ on any single agreeing site (over-promotes
+        partial consensus).
+  \item Identical multi-new as $\badge{same}$ (wrong mental category).
+\end{itemize}
+
+%======================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+Multi-model code evaluation needs a comparison geometry between raw
+patches and a ranking label. \PathSiteDesign{} defines that geometry:
+coverage-aware paths, base-anchored sites, and body-equivalence designs,
+with agreement that is site-local by construction. We proved elementary
+soundness properties, sketched \PSD{}-Bench, and showed on synthetic and
+real multi-model patches that false token agreement is common while true
+path-level multi agreement is rare---so site-level designs are not a
+luxury.
+
+Future work: publish \PSD{}-Bench with multi-annotator gold; generalize
+relation algebras for $N{>}3$; study LLM-as-judge accuracy with site-scoped
+prompts (Pattern~P6); and measure rater time-to-justification against
+independent-tab baselines.
+
+%======================================================================
+\section*{Notation}
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$M$ & model indices \\
+$P_i(p)$ & unified patch of model $i$ for path $p$ \\
+$C(p)$ & coverage set \\
+$\BodyKey(h)$ & ordered non-blank add/del lines of hunk $h$ \\
+$S_\ell$ & core site at base line $\ell$ \\
+$\rho(S)$ & site relation (partition type / product name) \\
+$\Badge(p)$ & path triage class \\
+\PSD{} & path\,$\rightarrow$\,site\,$\rightarrow$\,design geometry \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%======================================================================
+\begin{thebibliography}{99}
+
+\bibitem{bacchelli2013expectations}
+A.~Bacchelli and C.~Bird.
+\newblock Expectations, outcomes, and challenges of modern code review.
+\newblock In \emph{ICSE}, 2013.
+
+\bibitem{effibench}
+Y.~Huang et~al.
+\newblock EffiBench-X: A multi-language benchmark for measuring efficiency of
+LLM-generated code.
+\newblock arXiv:2505.13004, 2025.
+
+\bibitem{janestreet2013patch}
+Jane Street.
+\newblock Patch review vs.\ diff review, revisited.
+\newblock Engineering blog, 2013.
+\newblock \url{https://blog.janestreet.com/patch-review-vs-diff-review-revisited/}
+
+\bibitem{khanna2007unified}
+S.~Khanna, K.~Kunal, and B.~C.~Pierce.
+\newblock A formal investigation of diff3.
+\newblock In \emph{FSTTCS}, 2007.
+
+\bibitem{mens2002survey}
+T.~Mens.
+\newblock A state-of-the-art survey on software merging.
+\newblock \emph{IEEE TSE}, 28(5), 2002.
+
+\bibitem{sadowski2018modern}
+C.~Sadowski, E.~S{\"o}derberg, L.~Church, M.~Sipko, and A.~Bacchelli.
+\newblock Modern code review: A case study at Google.
+\newblock In \emph{ICSE-SEIP}, 2018.
+
+\bibitem{wang2024roadmap}
+X.~Wang et~al.
+\newblock A roadmap for modern code review: Challenges and opportunities.
+\newblock arXiv:2405.18216, 2024.
+
+\bibitem{zheng2024survey}
+Z.~Zheng et~al.
+\newblock A survey on evaluating large language models in code generation tasks.
+\newblock arXiv:2408.16498, 2024.
+
+\end{thebibliography}
+
+\end{document}
