@@ -2,7 +2,7 @@
 
 Starfleet Control (`sfctl`) is a [Textual](https://github.com/Textualize/textual)
 TUI for reviewing model outputs across task types: code review (3-model ranking),
-project proposals, and response comparisons (clarity). Python 3.12+.
+arena ranking (clarity checklist), and project proposals. Python 3.12+.
 
 This file is the contract for humans and coding agents working in the repo.
 
@@ -28,11 +28,13 @@ lockfile. Do not use bare `python`, `pytest`, or `ruff`.
 
 1. **`uv run python -c "from sfctl.app import StarfleetApp"`** must pass before
    committing (smoke import check).
-2. Commit with a clear imperative message (lowercase, no period).
-3. One logical change per commit when practical.
-4. GPG signing is disabled: `git -c commit.gpgsign=false commit ...`
-5. Do not leave unstaged related edits after claiming work is done.
-6. No emojis in code, comments, or commit messages.
+2. **`uv run pytest tests/ -q`** and **`uv run ruff check sfctl/`** must pass
+   before claiming work is done.
+3. Commit with a clear imperative message (lowercase, no period).
+4. One logical change per commit when practical.
+5. GPG signing is disabled: `git -c commit.gpgsign=false commit ...`
+6. Do not leave unstaged related edits after claiming work is done.
+7. No emojis in code, comments, or commit messages.
 
 ---
 
@@ -42,32 +44,32 @@ lockfile. Do not use bare `python`, `pytest`, or `ruff`.
 sfctl/
   app.py            # Textual App -- main TUI, bindings, compose, navigation
   app.tcss          # Layout, focus, panel styles (Textual CSS)
-  cli.py            # CLI entry point (print() allowed here only)
+  cli.py            # CLI entry point (print() allowed here; also interactive setup I/O in api.py)
   ids.py            # Widget IDs, CSS classes, enum constants
   commands.py       # Ctrl+P command palette provider
-  models.py         # Dataclasses (ModelData, ParsedContent, ClarityData, ...)
+  models.py         # Dataclasses / Pydantic models (ModelData, ParsedContent, ...)
   task_types.py     # TaskType enum + detect_task_type()
   handlers/
     __init__.py     # handler_for_type() factory
     base.py         # TaskHandler ABC -- interface for task-type-specific behavior
-    ranking.py      # RankingHandler (code_review: 3 models, vote bars, diffs)
+    ranking.py      # RankingHandler (code_review: models, vote bars, diffs, shared files)
+    arena.py        # ArenaHandler (arena_ranking: clarity checklist, multi-justification)
     proposal.py     # ProposalHandler (project proposals: rubrics, issues, trace)
-    comparison.py   # ComparisonHandler (response comparison: error tags, preference)
-  clarity.py        # Parser for response-comparison tasks
-  diff.py           # Diff parsing + content extraction
+  diff.py           # Diff parsing + content extraction (code review / arena)
+  arena.py          # Arena checklist + multi-field justification parsing
   proposal.py       # Parser for project-proposal tasks
-  analysis.py       # Rule-based analysis engine (signals, flags)
+  diff_compare.py   # Cross-model shared-file compare (ranking)
+  cq_viewport.py    # 80-column response width preview helpers (arena)
   ranking.py        # Model summary text helpers
-  scoring.py        # Score computation
-  history.py        # History entry diffing
+  scoring.py        # Local scores, annotations, justification persistence
+  history.py        # History entry normalization, ranking display, change detection
   formatting.py     # Timestamp, duration, sanitize helpers
   fuzzy.py          # Fuzzy matching for search modals
-  config.py         # ~/.sfctl/config.json read/write
+  config.py         # OS config/data dirs via platformdirs (config.json)
   session.py        # Local session history tracking
-  api.py            # HTTP API client (httpx)
-  clusters.py       # Reviewer clustering / inter-rater analysis
-  constants.py      # Shared constants (EM_DASH, etc.)
-  screens.py        # Modal screens (help, search, analysis, yank, comments)
+  api.py            # HTTP API client (httpx) + cookie/token resolution
+  constants.py      # Shared constants (EM_DASH, arrows, etc.)
+  screens.py        # Modal screens (help, search, yank, comments, shared compare)
   widgets.py        # Custom widgets (DiffDisplay, LazyCollapsible, SplitHandle)
   search.py         # SearchController (diff/event search, grep navigation)
   editor.py         # EditorController (justification, comments, clipboard)
@@ -76,18 +78,23 @@ sfctl/
 
 ### Data flow
 
-`models -> parsers (clarity/diff/proposal) -> handlers -> app.py`. Screens and
+`models -> parsers (diff/arena/proposal) -> handlers -> app.py`. Screens and
 controllers delegate to app; no file I/O or JSON parsing in screen/controller code.
 
 ### Task-type handlers
 
-`app.py` delegates type-specific behavior to a `TaskHandler` subclass (one per task
-type) via `self.handler`. The app owns widget lifecycle, navigation, and bindings.
-The handler owns parsing, content rendering, history diffing, and scoreboard text.
+`app.py` delegates type-specific behavior to a `TaskHandler` subclass (one per
+supported task type) via `self.handler`. The app owns widget lifecycle,
+navigation, and bindings. The handler owns parsing, content rendering, history
+diffing, scoreboard text, and which actions are hidden.
 
-To add a new task type: create a handler in `sfctl/handlers/`, a parser module,
-add a `TaskType` enum value + detection rule, and register in `handler_for_type()`.
-No changes to `app.py` are needed.
+To add a new task type: create a handler in `sfctl/handlers/`, a parser module
+if needed, add a `TaskType` enum value + detection rule, and register in
+`handler_for_type()`. Prefer extending the handler interface (`hidden_actions`,
+`check_action`, `extra_overview_tabs`, response chrome hooks) over branching on
+`TaskType` / `isinstance` in `app.py`. Some global bindings still live in the app
+(e.g. `w` for arena 80-col preview) when they must be registered at the App
+level; keep that surface small.
 
 ### Composition controllers
 
@@ -97,7 +104,7 @@ No changes to `app.py` are needed.
 |------------|------|------|
 | `VotingController` | `voting.py` | Vote bars, score changes, annotations |
 | `SearchController` | `search.py` | Diff/event search modals, grep navigation |
-| `EditorController` | `editor.py` | Justification, comments, clipboard |
+| `EditorController` | `editor.py` | Justification (classic single + arena multi-field), comments, clipboard, violation notes |
 
 Controllers receive `self` (the app) and call `self._app.*` for widget access.
 They use `self._app._status(msg)` for user feedback (not `notify()`).
@@ -111,7 +118,9 @@ They use `self._app._status(msg)` for user feedback (not `notify()`).
 - `snake_case` functions/variables, `PascalCase` classes, `UPPER_SNAKE` constants.
 - `from __future__ import annotations` in every module.
 - Type-annotate public signatures. Use `X | None`, lowercase generics.
-- No `print()` except in `cli.py`.
+- No `print()` except in `cli.py` and interactive setup paths in `api.py`
+  (cookie profile picker, token/cookie resolution progress). TUI code must never
+  print.
 - Initialise all instance attributes in `__init__`.
 - No section divider comments (`# --- Section ---`).
 - No emojis anywhere.
@@ -149,11 +158,11 @@ helpers in the nearest open file.
 | Module | Allowed | Forbidden |
 |--------|---------|-----------|
 | `models.py` | Types, dataclasses, Pydantic models | Formatting, I/O, presentation |
-| `app.py` | TUI App, bindings, compose, navigation | Trace JSON parsing, API calls |
-| `screens.py` | Modal screens, search modals | Domain logic, data parsing |
-| `widgets.py` | Custom Textual widgets | Business logic, file I/O |
+| `app.py` | TUI App, bindings, compose, navigation | Trace JSON parsing, API calls (except refresh worker wiring) |
+| `screens.py` | Modal screens, search modals | Domain parsing of API payloads |
+| `widgets.py` | Custom Textual widgets | Business logic beyond display |
 | `formatting.py` | Pure text helpers (timestamps, sanitize) | Widget creation, API calls |
-| `handlers/*.py` | Task-type-specific parsing, rendering, history | Direct widget queries outside populate methods |
+| `handlers/*.py` | Task-type-specific parsing, rendering, history | Direct widget queries outside populate / width-apply methods |
 | Controllers (`voting.py`, `search.py`, `editor.py`) | Delegation logic for their concern | Direct JSON parsing, file I/O |
 
 ### 4.4 Imports
@@ -163,7 +172,7 @@ Module-level imports at the top (stdlib, third-party, local), after
 
 - Use `TYPE_CHECKING` for type-only imports to break cycles.
 - Function-level imports allowed for heavy optional deps (`deep_translator`,
-  `openpyxl`, `redlines`) and deferred analysis imports.
+  `openpyxl`, `redlines`) and deferred handler/feature imports.
 
 ### 4.5 Error handling
 
@@ -193,13 +202,24 @@ Selected rules: E, F, W, I, UP, B, SIM, RUF.
 
 | Type | Enum | Models | Features |
 |------|------|--------|----------|
-| Code review | `CODE_REVIEW` | 3 (A/B/C) | Diffs, traces, vote bars, ranking |
+| Code review | `CODE_REVIEW` | N (typically 3 A/B/C) | Diffs, traces, vote bars, ranking, shared-file compare |
+| Arena ranking | `ARENA_RANKING` | N (typically 3) | Same as code review plus editable CQ checklist (mark any rule via `v`), 3 editable justifications, 80-col response preview |
 | Project proposal | `PROJECT_PROPOSAL` | 1 | Rubrics, issues, trace, diffs |
-| Response comparison | `RESPONSE_COMPARISON` | 2 (A/B) | Error tags, preference, rationale, conversation history |
+| Unsupported | `UNKNOWN` | 0 | Minimal overview message only |
 
-Detection logic in `task_types.py`. Parsing in `diff.py`, `proposal.py`,
-`clarity.py` respectively. TUI behavior in `handlers/ranking.py`,
-`handlers/proposal.py`, `handlers/comparison.py`.
+Detection logic in `task_types.py`:
+
+- Arena: `"Model Traces"` item + `response_clarity_checklist` question
+- Code review: `"Model Traces"` item (without arena checklist)
+- Proposal: `coding_question` + `rubrics` questions
+- Else: `UNKNOWN`
+
+Parsing in `diff.py` / `arena.py` / `proposal.py`. TUI behavior in
+`handlers/ranking.py`, `handlers/arena.py`, `handlers/proposal.py`.
+
+`handler_for_type()` maps proposal and arena explicitly; other types (including
+`CODE_REVIEW`) use `RankingHandler`. `UNKNOWN` still gets a ranking handler for
+parse plumbing, but compose short-circuits to an unsupported-type message.
 
 ---
 
@@ -210,23 +230,35 @@ Keyboard-first. Every feature must be reachable with keys and/or Ctrl+P.
 ### 6.1 Bindings
 
 Defined in `app.py` `BINDINGS`. Use `check_action()` to context-gate:
-return `False` to hide from Footer when not applicable.
+return `False` to hide from Footer when not applicable. Handlers may hide
+actions via `hidden_actions()` and override `check_action()`.
 
 | Key | Action | Context |
 |-----|--------|---------|
 | `0` | Overview | Always (in unified: focus overview section) |
-| `1`/`2`/`3` | Model A/B/C | Code review / comparison (in unified: focus column) |
-| `m` | Model | Proposals (in unified: focus model column) |
-| `u` | Toggle split (unified) view | All task types |
-| `t` | Toggle translate (system locale) | Always (global: prompt + responses + context) |
-| `a` | Analysis modal | Always |
+| `1`/`2`/`3` | Model A/B/C | Ranking / arena (in unified: focus column) |
+| `m` | Model | Proposals |
+| `u` | Toggle split (unified) view | When `handler.supports_split` |
+| `t` | Toggle translate (system locale) | Always (prompt + responses) |
+| `w` | Toggle 80-col response preview | Arena ranking only |
+| `v` | Mark CQ checklist violation | Arena (full rule catalog; works on empty tasks) |
+| `s` | Cross-model shared-file compare | Ranking when shared files exist |
 | `e` | Toggle expand/collapse | Model or overview view |
 | `f` | Toggle maximize/restore pane | Any view |
-| `+`/`-` | Vote up/down | Model view (code review only) |
+| `+`/`-` | Vote up/down | Model view (ranking / arena) |
+| `y` | Yank diff snippet | Model / diff focus (arena → Code quality) |
+| `n` / `ctrl+n` | Add / edit reviewer notes | Review flows |
+| `ctrl+e` | Edit justification | Overview (arena: cycle response / code / overall; esc saves) |
+| `c` / `C` | Copy review / comments | When available |
 | `ctrl+f` | Search diffs | Model view |
 | `ctrl+g` | Search events | Model view |
+| `r` | Refresh data from API | When session cookies present |
+| `ctrl+r` | Reset local annotations | Always |
+| `@` | Toggle emails in history | Always |
 | `tab`/`shift+tab` | Next/prev tab | Any tabbed view (including unified overview) |
+| `escape` | Exit editor / fullscreen / 80-col preview | Context-dependent |
 | `?` | Help modal | Always |
+| `q` | Quit | Always |
 
 ### 6.2 Focus model
 
@@ -236,7 +268,7 @@ return `False` to hide from Footer when not applicable.
 | **0** / **1-3** / **m** | Switch focus between overview and model panes |
 | **Arrow keys**, PgUp/PgDn | Scroll inside focused `ScrollableContainer` |
 | **Enter / Space** | Activate control or selected item |
-| **Esc** | Dismiss modal |
+| **Esc** | Dismiss modal / exit view modes |
 
 - Focus order follows `compose()` DOM order.
 - After switching panes, `.focus()` the target scroll container so keyboard
@@ -247,17 +279,21 @@ return `False` to hide from Footer when not applicable.
 ### 6.3 Unified view
 
 The unified (split) view shows all models side-by-side with an overview section
-below. Works for all task types (code review, proposals, comparisons).
+below. Available when `handler.supports_split` (ranking, arena, proposals with
+a model column).
 
 - Each column is an independently scrollable `ScrollableContainer`.
-- For ranking jobs, each column has its own `TabbedContent` (Response/Trace/Diffs).
-- Trace, diffs, history, and context tabs are **deferred** -- content mounts on
-  first tab activation via `_deferred_tabs`.
+- For ranking/arena jobs, each column has its own `TabbedContent`
+  (Response/Trace/Diffs).
+- Trace, diffs, and history tabs are **deferred** -- content mounts on first
+  tab activation via `_deferred_tabs`.
 - `_split_focus` tracks which column is active (-1 = overview, 0+ = model index).
 - `_split_model_count()` returns the correct column count per task type.
 - The `.split-active` CSS class marks the focused column with a top outline.
 - Navigation stays within the unified view; `u` toggles back to individual views.
-- The overview area has its own `TabbedContent` with Current + history tabs.
+- The overview area has its own `TabbedContent` with Current and history tabs.
+- Cross-model file compare is opened with `s` (not an overview tab).
+- A `SplitHandle` resizes the models strip versus the overview below.
 
 ### 6.4 Command palette
 
@@ -270,17 +306,54 @@ Use `self._status(msg)` (or `self.call_from_thread(self._status, msg)` from
 threaded workers) instead of `self.notify()`. The status bar is a single-line
 `Static` widget above the Footer that auto-clears after 4 seconds.
 
-### 6.6 Translation
+### 6.6 User-facing language and casing
+
+Ship product copy only -- no design-process notes, no internal jargon, no
+abbreviations except conventional ones (`Diff` / `Diffs`, `Esc`, `Ctrl+…`,
+model letters A/B/C). Prefer full words in sentences (`Code Quality`, not
+`CQ`; `Copy Snippet`, not `Yank`).
+
+**Casing by surface** (apply app-wide; shared-file compare is the reference):
+
+| Surface | Casing | Examples |
+|---------|--------|----------|
+| Footer / command palette / bindings | **Title Case** | Compare Files, Shared, Unique, Pairs, Copy Snippet |
+| Section / card kind words | **Title Case** | Shared · loc, Pair · site, Letter · loc |
+| Badges / triage chips | **lowercase**, same token everywhere | `new`, `same`, `share`, `diff`, `solo` |
+| Counts and stats | **lowercase** | `5 sites`, `2 split`, `3 unique` |
+| Banners and body prose | **Sentence case** | Alternate designs — read A, then B, then C |
+| Help modal section headers | **Title Case** | File List, Reading the Detail, Keys |
+| Status messages | **Sentence case** (or Title Case when echoing a binding) | Filter: Shared |
+
+**Shared-compare tokens** (do not invent synonyms across list/header/help):
+
+| Token | Meaning |
+|-------|---------|
+| `new` | Multi-model new file (or solo new path) |
+| `same` | Identical patches / full agreement at a site |
+| `share` | Shared edit path (agreement plus unique cards) |
+| `diff` | Same base site, different designs (split) |
+| `solo` | Only one model touched the path |
+| unique (stat) | Change at a site in only one model |
+| split (stat) | Same site, different designs |
+| pair (stat) | Exactly two models match at a site |
+
+List-row badges, detail-header badges, and help legends must use the **same**
+chip words (`same` not "identical" in one place and "same" in another; `diff`
+not "diverge"). Section titles may still say **Shared** / **Pair** (Title
+Case kind labels) above those chips.
+
+### 6.7 Translation
 
 Global toggle (`t`) translates all translatable content to the system locale
-(prompt, model responses, split responses, conversation turns). Uses
-`deep-translator` (Google Translate) with paragraph-boundary chunking for the
-5000-char limit. The target language is detected via `locale.getdefaultlocale()`.
-Translations are cached in `self._translated` (keyed by model index, `"prompt"`,
-or `"ctx-N"`). The `_apply_translations()` / `_restore_originals()` methods
-handle swapping all widgets.
+(prompt, model responses, split responses). Uses `deep-translator` (Google
+Translate) with paragraph-boundary chunking for the 5000-char limit. The target
+language is detected via `locale.getdefaultlocale()`. Translations are cached in
+`self._translated` (keyed by model index or `"prompt"`). The
+`_apply_translations()` / `_restore_originals()` methods handle swapping all
+widgets.
 
-### 6.7 Keyboard-only checklist (new UI / modals)
+### 6.8 Keyboard-only checklist (new UI / modals)
 
 - [ ] Primary content gets focus when populated.
 - [ ] Multi-tab UI uses `TabbedContent` with `tab`/`shift+tab` cycling.
@@ -293,7 +366,7 @@ handle swapping all widgets.
       view (model tabs when focused on model, overview tabs when focused on
       overview).
 
-### 6.8 Performance (deferred loading)
+### 6.9 Performance (deferred loading)
 
 Mount expensive content lazily. The `_deferred_tabs` dict maps tab pane IDs to
 tuples describing what to build on first activation:
@@ -303,16 +376,15 @@ tuples describing what to build on first activation:
 | `"trace"` | `("trace", model_idx, vote_bars)` | `_mount_trace_content` |
 | `"diffs"` | `("diffs", model_idx, vote_bars)` | `_mount_diffs_content` |
 | `"history"` | `("history", orig_idx, changed)` | `_populate_history_entry` |
-| `"context"` | `("context",)` | `_populate_context_tab` |
 | `"proposal-trace"` | `("proposal-trace",)` | `_mount_trace_content` (proposal) |
 | `"proposal-diffs"` | `("proposal-diffs",)` | mounts `LazyCollapsible` for each file |
 
 Use `Static(RichMarkdown(...))` instead of Textual `Markdown(...)` widget for
-content display. The Textual `Markdown` widget creates a sub-widget tree per
-element; `RichMarkdown` renders as a single Rich renderable.
-
-Analysis (`analyze_task`) runs in a `@work(thread=True)` worker after the UI
-renders, so startup is not blocked.
+content display when practical. The Textual `Markdown` widget creates a
+sub-widget tree per element; `RichMarkdown` renders as a single Rich renderable.
+Editable overview justifications use Textual `Markdown` previews paired with
+`TextArea` editors (classic: one pair; arena: three pairs under
+`just-preview-*` / `just-editor-*` ids).
 
 ---
 
@@ -333,7 +405,12 @@ type-specific work.
 | `populate_unified_model(scroll, idx)` | Build a model column in unified view |
 | `has_changes(prev, curr)` | Detect history entry changes |
 | `history_diff_widgets(prev, curr)` | Build change display widgets |
+| `history_detail_widgets(entry, changed)` | Justification / checklist below diffs |
 | `scoreboard_parts()` | Type-specific scoreboard text |
+| `extra_overview_tabs()` | Extra overview panes (unused by ranking/arena) |
+| `shared_file_compares()` | Cross-model file compare data (`s` modal) |
+| `hidden_actions()` | Action names to hide from Footer |
+| `response_chrome_widgets` / `response_wrap_classes` | Per-type response chrome |
 
 These app methods remain shared across all task types:
 
@@ -374,6 +451,8 @@ Key CSS classes:
 | TUI | Textual (+ Rich) |
 | HTTP | httpx |
 | Models | Pydantic v2 |
+| Config paths | platformdirs |
+| Cookies | browser-cookie3 |
 | Translation | deep-translator |
 | Diff rendering | redlines |
 | Syntax | tree-sitter (C, C++, Kotlin, PHP, Ruby, TypeScript) |
@@ -387,3 +466,5 @@ Key CSS classes:
 - Async TUI tests: `@pytest.mark.asyncio` + `app.run_test()`.
 - Shared fixtures in `tests/conftest.py`.
 - Coverage: `uv run pytest tests/ --cov=sfctl --cov-report=term-missing`.
+- Prefer asserting overview **pane IDs** (e.g. `tab-current`, `tab-shared`,
+  `tab-entry-N`) over raw `tab_count` when extra overview tabs may be present.

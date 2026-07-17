@@ -180,20 +180,29 @@ class TestNavigation:
         from textual.widgets import Static
 
         from sfctl.formatting import rank_color
-        from sfctl.ids import model_header_id, model_id
-        from sfctl.ranking import previous_model_rank
+        from sfctl.ids import model_header_id, model_id, model_letter
+        from sfctl.ranking import model_letter_colors, previous_model_rank
 
         async with app.run_test() as pilot:
             await pilot.pause()
             history = fixture_data["history"]
+            colors = model_letter_colors(app.scores, history, 3)
+            assert colors, "fixture should establish a preference ranking"
+            app._apply_model_header_colors()
+            rank_bgs = {Color.parse(c) for c in ("green", "yellow", "red")}
             for idx in range(3):
+                letter = model_letter(idx)
+                assert previous_model_rank(history, idx) is not None
+                assert letter in colors
+                assert colors[letter] == rank_color(
+                    previous_model_rank(history, idx), 3
+                )
                 mid = model_id(idx)
                 header = app.query_one(f"#{model_header_id(mid)}", Static)
-                rank = previous_model_rank(history, idx)
-                assert rank is not None
-                assert header.styles.background == Color.parse(
-                    rank_color(rank, 3)
-                )
+                # Letter markup carries the rank color; bar stays theme chrome
+                # (not a solid green/yellow/red fill).
+                bg = header.styles.background
+                assert bg not in rank_bgs
 
     @pytest.mark.asyncio
     async def test_go_model_keys_switch_models(self, app):
@@ -250,6 +259,40 @@ class TestNavigation:
             # Only model C column should be visible while maximized
             assert app.query_one("#split-model-c").display is True
             assert app.query_one("#split-model-a").display is False
+
+    @pytest.mark.asyncio
+    async def test_scroll_selects_unfocused_unified_column(self, app):
+        """Wheel over an unfocused model column should activate it."""
+        from textual.events import MouseScrollDown
+
+        async with app.run_test() as pilot:
+            await pilot.press("u")
+            await pilot.pause()
+            await pilot.press("1")
+            await pilot.pause()
+            assert app._split_focus == 0
+
+            col_b = app.query_one("#split-model-b")
+            # Helper path (click / direct selection from a child widget).
+            assert app._select_unified_from_widget(col_b) is True
+            assert app._split_focus == 1
+            assert app.current_model_index == 1
+            assert col_b.has_class("split-active")
+
+            await pilot.press("1")
+            await pilot.pause()
+            assert app._split_focus == 0
+
+            # Full wheel path: App.on_event before forward (real terminal input).
+            region = col_b.region
+            x, y = region.x + region.width // 2, region.y + region.height // 2
+            event = MouseScrollDown(
+                None, x, y, 0, 1, 0, False, False, False, screen_x=x, screen_y=y,
+            )
+            await app.on_event(event)
+            await pilot.pause()
+            assert app._split_focus == 1
+            assert app.current_model_index == 1
 
     @pytest.mark.asyncio
     async def test_no_models_overview(self, minimal_data):
@@ -816,7 +859,7 @@ class TestHistoryOrder:
     @pytest.mark.asyncio
     async def test_identical_entries_no_feedback_skipped(self):
         """Unchanged entries with no feedback are skipped."""
-        from textual.widgets import TabbedContent
+        from textual.widgets import TabbedContent, TabPane
 
         from sfctl.app import StarfleetApp
 
@@ -838,14 +881,17 @@ class TestHistoryOrder:
             await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
-            # L1 has no changes AND no feedback -> skipped
-            # Current + L0 revision = 2 tabs
-            assert tabs.tab_count == 2
+            pane_ids = {p.id for p in tabs.query(TabPane)}
+            # L1 has no changes AND no feedback -> skipped.
+            assert "tab-current" in pane_ids
+            assert "tab-entry-0" in pane_ids  # L0 first revision
+            assert "tab-entry-1" not in pane_ids  # identical L1 skipped
+            assert "tab-shared" not in pane_ids
 
     @pytest.mark.asyncio
     async def test_review_with_feedback_shown(self):
         """Unchanged entries with feedback are shown as reviews."""
-        from textual.widgets import Collapsible, TabbedContent
+        from textual.widgets import Collapsible, TabbedContent, TabPane
 
         from sfctl.app import StarfleetApp
 
@@ -872,8 +918,11 @@ class TestHistoryOrder:
             await pilot.press("0")
             await pilot.pause()
             tabs = app.query_one("#tabs-overview", TabbedContent)
-            # Current + L1 review (has feedback) + L0 revision = 3 tabs
-            assert tabs.tab_count == 3
+            pane_ids = {p.id for p in tabs.query(TabPane)}
+            # Current + L1 review (has feedback) + L0 revision; Files tab optional.
+            assert "tab-current" in pane_ids
+            assert "tab-entry-0" in pane_ids  # L1 review (newest history shell)
+            assert "tab-entry-1" in pane_ids  # L0 revision
             tabs.active = "tab-entry-0"
             await pilot.pause()
             pane = tabs.get_pane("tab-entry-0")
@@ -1322,3 +1371,21 @@ class TestProposalApp:
             await pilot.press("tab")
             await pilot.pause()
             assert tabs.active != initial
+
+
+class TestEscapeWithModal:
+    @pytest.mark.asyncio
+    async def test_escape_on_modal_does_not_clear_maximize(self, app):
+        """Modal Esc dismisses only the modal; app view modes stay until next Esc."""
+        from sfctl.screens import HelpModal
+
+        async with app.run_test() as pilot:
+            app._maximized = True
+            app.push_screen(HelpModal("help text", "Help"))
+            await pilot.pause()
+            assert isinstance(app.screen, HelpModal)
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, HelpModal)
+            # Maximize must still be on; Esc was owned by the modal.
+            assert app._maximized is True

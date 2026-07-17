@@ -1789,6 +1789,27 @@ class TestSharedCompareAction:
             tabs = app.query_one(f"#{model_tabs_id(mid)}", TabbedContent)
             assert tabs.active == tab_diffs_id(mid)
 
+    def test_section_model_run_from_only_and_pair(self):
+        from sfctl.diff_compare import CompareSection
+        from sfctl.screens import _section_model_run
+
+        only_a = CompareSection(
+            key="only-0-A", title="A · site", model_letter="A", kind="only",
+        )
+        assert _section_model_run(only_a) == "A"
+        pair = CompareSection(
+            key="pair-0-AB",
+            title="Pair · site",
+            model_letter="A",
+            part_labels=["AB"],
+            kind="pair",
+        )
+        assert _section_model_run(pair) == "AB"
+        shared = CompareSection(
+            key="same-0", title="Shared · site", model_letter="A", kind="same",
+        )
+        assert _section_model_run(shared) == ""
+
     @pytest.mark.asyncio
     async def test_select_design_keys_sync_tabs(self, make_app):
         """1/2/3 select design letter-runs without leaving the compare modal."""
@@ -1804,8 +1825,6 @@ class TestSharedCompareAction:
             )
 
         def _item(title: str, files: dict[str, str]) -> dict:
-            # Multi-file traces: build one combined codeDiff (first file wins for parser)
-            # Ranking parser uses file_diffs from model; use ModelData-style via full blob
             patches = "".join(files.values())
             return {
                 "title": title,
@@ -1867,6 +1886,101 @@ class TestSharedCompareAction:
             assert screen._design_letter_pref == "A"
             for tc in screen.query(".shared-design-tabs"):
                 assert (tc.active or "").endswith("-A")
+
+    @pytest.mark.asyncio
+    async def test_select_design_expands_unique_collapses_others(self, make_app):
+        """1 expands only-A collapsibles and collapses only-B/C unique sites."""
+        from textual.widgets import Collapsible
+
+        from sfctl.screens import SharedCompareScreen
+
+        def _patch(path: str, *hunks: tuple[int, str, str]) -> str:
+            """One file, multiple hunks (single diff --git header)."""
+            parts = [f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"]
+            for start, body, label in hunks:
+                parts.append(
+                    f"@@ -{start},3 +{start},4 @@ {label}\n"
+                    f"     keep\n+{body}\n     after\n"
+                )
+            return "".join(parts)
+
+        def _item(title: str, patch: str) -> dict:
+            return {
+                "title": title,
+                "diff": {"codeDiff": patch},
+                "trace": {"trace": "summary", "messages": "[]", "toolEvents": "[]"},
+            }
+
+        # Shared diverge at 10 + unique sites at different lines per model.
+        a = _patch(
+            "f.py",
+            (10, "div_a", "def shared():"),
+            (50, "only_a_unique", "def only_a():"),
+        )
+        b = _patch(
+            "f.py",
+            (10, "div_b", "def shared():"),
+            (80, "only_b_unique", "def only_b():"),
+        )
+        c = _patch(
+            "f.py",
+            (10, "div_c", "def shared():"),
+            (120, "only_c_unique", "def only_c():"),
+        )
+        data = {
+            "task": {"taskId": "t-unique-collapse"},
+            "content": {
+                "taskId": "t-unique-collapse",
+                "content": {
+                    "items": [
+                        {"type": "text", "title": "Repository", "text": "repo"},
+                        {"type": "message", "title": "Current Prompt", "content": "p"},
+                        {
+                            "type": "collection",
+                            "title": "Model Traces",
+                            "items": [
+                                _item("Model A", a),
+                                _item("Model B", b),
+                                _item("Model C", c),
+                            ],
+                        },
+                    ]
+                },
+            },
+            "history": [],
+            "feedback": {},
+        }
+        app = make_app(task_id="t-unique-collapse", data=data)
+
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app.action_shared_compare()
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, SharedCompareScreen)
+
+            await pilot.press("1")
+            await pilot.pause()
+            assert screen._focus_model_letter == "A"
+
+            only_cols = [
+                c for c in screen.query(Collapsible)
+                if "shared-section" in c.classes
+                and any(cls.startswith("shared-models-") for cls in c.classes)
+            ]
+            by_model: dict[str, list] = {"A": [], "B": [], "C": []}
+            for col in only_cols:
+                for cls in col.classes:
+                    if cls.startswith("shared-models-") and cls != "shared-models-neutral":
+                        run = cls.removeprefix("shared-models-")
+                        if run in by_model:
+                            by_model[run].append(col)
+            assert by_model["A"], "expected only-A collapsible"
+            assert by_model["B"] or by_model["C"], "expected other-model unique sites"
+            assert all(not c.collapsed for c in by_model["A"])
+            for letter in ("B", "C"):
+                for c in by_model[letter]:
+                    assert c.collapsed, f"{letter} unique site should collapse"
 
 
 class TestSharedBadges:

@@ -50,7 +50,7 @@ class SearchController:
 
         Unified model columns register Diffs/Trace as deferred; activating the
         tab alone is async, so search must materialize content before querying
-        collapsibles.
+        collapsibles. Mount helpers are fully awaited (no worker wait).
         """
         deferred = self._app._deferred_tabs.pop(pane_id, None)
         if not deferred:
@@ -82,7 +82,6 @@ class SearchController:
                 bash_history=app.proposal.bash_history,
                 setup_commands=app.proposal.setup_commands,
             )
-        await app.workers.wait_for_complete()
 
     def search_diffs(self) -> None:
         if self._app.task_type == TaskType.PROJECT_PROPOSAL:
@@ -160,21 +159,14 @@ class SearchController:
         await self._ensure_deferred_tab(trace_tid, tabs)
         target_pane = tabs.get_pane(trace_tid)
 
+        for group in target_pane.query(LazyCollapsible):
+            if group.lazy.events and not group.lazy.populated:
+                await self._app._populate_lazy_collapsible(group)
+
         trace_collapsibles = [
             c for c in target_pane.query(Collapsible)
             if "trace-event-c" in (c.classes or set())
         ]
-        if not trace_collapsibles:
-            for c in target_pane.query(LazyCollapsible):
-                if c.lazy.events and not c.lazy.populated:
-                    c.collapsed = False
-                    await self._app.workers.wait_for_complete()
-                    trace_collapsibles = [
-                        cc for cc in target_pane.query(Collapsible)
-                        if "trace-event-c" in (cc.classes or set())
-                    ]
-                    break
-
         if 0 <= event_index < len(trace_collapsibles):
             target = trace_collapsibles[event_index]
             target.collapsed = False
@@ -199,18 +191,17 @@ class SearchController:
         await self._ensure_deferred_tab(diffs_tid, tabs)
         diffs_pane = tabs.get_pane(diffs_tid)
         for collapsible in diffs_pane.query(Collapsible):
-            if str(collapsible.title) == filename:
-                already_open = not collapsible.collapsed
-                self._app._pending_grep = (collapsible, container, grep_line)
-                if already_open:
-                    self.flush_pending_grep()
-                else:
-                    # LazyCollapsible mounts DiffDisplay on expand; flush once ready.
-                    collapsible.collapsed = False
-                    if not self.flush_pending_grep():
-                        # Message handlers may not have run yet — retry after refresh.
-                        self._app.call_after_refresh(self.flush_pending_grep)
-                return
+            if str(collapsible.title) != filename:
+                continue
+            self._app._pending_grep = (collapsible, container, grep_line)
+            # Materialize eagerly so DiffDisplay exists before we scroll/jump.
+            # (Expand handlers use the same path; this avoids relying on message order.)
+            if isinstance(collapsible, LazyCollapsible):
+                await self._app._populate_lazy_collapsible(collapsible)
+            collapsible.collapsed = False
+            if not self.flush_pending_grep():
+                self._app.call_after_refresh(self.flush_pending_grep)
+            return
         self._app._status(f"Diff not found: {filename}")
 
     def flush_pending_grep(self) -> bool:

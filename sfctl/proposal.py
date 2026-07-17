@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from sfctl.constants import DIFF_ADD_STYLE, DIFF_DEL_STYLE
 from sfctl.diff import extract_file_diffs, parse_messages_trace
 from sfctl.formatting import format_duration, sanitize
 from sfctl.models import ProposalData, TraceEvent
@@ -129,10 +130,10 @@ def proposal_rubric_changes(prev: list[str], curr: list[str]) -> list[str]:
     curr_set = set(curr)
     for r in curr:
         if r not in prev_set:
-            lines.append(f"[green]+[/] {sanitize(r)}")
+            lines.append(f"[{DIFF_ADD_STYLE}]+[/] {sanitize(r)}")
     for r in prev:
         if r not in curr_set:
-            lines.append(f"[red]-[/] {sanitize(r)}")
+            lines.append(f"[{DIFF_DEL_STYLE}]-[/] {sanitize(r)}")
     return lines
 
 
@@ -320,7 +321,10 @@ def proposal_all_changes(
     def _sf_change(label: str, old: str, new: str) -> None:
         old_s = sanitize(old, 80) or "(empty)"
         new_s = sanitize(new, 80) or "(empty)"
-        _markup(f"[bold]{label}:[/bold] [red]{old_s}[/red] → [green]{new_s}[/green]")
+        _markup(
+            f"[bold]{label}:[/bold] "
+            f"[{DIFF_DEL_STYLE}]{old_s}[/] → [{DIFF_ADD_STYLE}]{new_s}[/]"
+        )
 
     def _text_diff(label: str, old: str, new: str) -> None:
         items.append((label, old, new))
@@ -356,9 +360,16 @@ def proposal_all_changes(
     curr_url = _proposal_repo_url(curr)
     if prev_url != curr_url:
         if prev_url:
-            _markup(f"[bold]Repo URL:[/bold] [red]{sanitize(prev_url)}[/red] → [green]{sanitize(curr_url)}[/green]")
+            _markup(
+                f"[bold]Repo URL:[/bold] "
+                f"[{DIFF_DEL_STYLE}]{sanitize(prev_url)}[/] → "
+                f"[{DIFF_ADD_STYLE}]{sanitize(curr_url)}[/]"
+            )
         else:
-            _markup(f"[bold]Repo URL:[/bold] [green]{sanitize(curr_url)}[/green]")
+            _markup(
+                f"[bold]Repo URL:[/bold] "
+                f"[{DIFF_ADD_STYLE}]{sanitize(curr_url)}[/]"
+            )
 
     old_patch = _proposal_code_patch(prev)
     new_patch = _proposal_code_patch(curr)
@@ -370,9 +381,9 @@ def proposal_all_changes(
         common = len(old_files & new_files)
         parts: list[str] = []
         if added:
-            parts.append(f"[green]+{added}[/green]")
+            parts.append(f"[{DIFF_ADD_STYLE}]+{added}[/]")
         if removed:
-            parts.append(f"[red]-{removed}[/red]")
+            parts.append(f"[{DIFF_DEL_STYLE}]-{removed}[/]")
         if common:
             parts.append(f"{common} common")
         _markup(f"[bold]Code patch:[/bold] {', '.join(parts)} files")

@@ -56,7 +56,7 @@ def previous_ranking_summary(history: list) -> str:
     sections = []
     for key, label in [
         ("preference_ranking", "Overall"),
-        ("response_quality_ranking", "Resp"),
+        ("response_quality_ranking", "Response"),
         ("code_quality_ranking", "Code"),
     ]:
         ranking = get_full_ranking(last, key)
@@ -67,7 +67,11 @@ def previous_ranking_summary(history: list) -> str:
 
 def local_ranking_summary(scores: list[ModelScores]) -> str:
     sections = []
-    for cat, label in [("overall", "Overall"), ("response", "Resp"), ("code", "Code")]:
+    for cat, label in [
+        ("overall", "Overall"),
+        ("response", "Response"),
+        ("code", "Code"),
+    ]:
         ranking = ranking_for_category(scores, cat)
         if ranking:
             sections.append(f"[bold]{label}:[/bold] {ranking}")
@@ -78,9 +82,9 @@ def rankings_summary(scores: list[ModelScores], history: list) -> str:
     local = local_ranking_summary(scores)
     prev = previous_ranking_summary(history)
     if prev and local:
-        return f"[dim]Last:[/dim] {prev}  ||  [bold]Yours:[/bold] {local}"
+        return f"[dim]Previous:[/dim] {prev}  ||  [bold]Local:[/bold] {local}"
     if prev:
-        return f"[dim]Last:[/dim] {prev}"
+        return f"[dim]Previous:[/dim] {prev}"
     if local:
         return local
     return ""
@@ -97,6 +101,35 @@ def previous_model_rank(history: list, index: int) -> int | None:
             if len(letter) == 1 and ord(letter) - ord("a") == index:
                 return rank
     return None
+
+
+def model_letter_colors(
+    scores: list[ModelScores],
+    history: list,
+    n_models: int,
+) -> dict[str, str]:
+    """Map model letter (A/B/C) to rank_color when a ranking is available.
+
+    Prefer local votes when any score is non-zero; otherwise use the last
+    preference ranking from history. Unranked models are omitted.
+    """
+    colors: dict[str, str] = {}
+    if n_models <= 0:
+        return colors
+    has_local = any(s.any_nonzero() for s in scores)
+    for idx in range(n_models):
+        if has_local:
+            rank = model_rank(scores, idx)
+            colors[model_letter(idx)] = rank_color(rank, n_models)
+        else:
+            prev = previous_model_rank(history, idx)
+            if prev is not None:
+                # Total for rank_color is how many models appear in that ranking.
+                last = history[-1] if history else {}
+                value = (last.get("preference_ranking") or {}).get("value") or []
+                total = max(len(value), 1)
+                colors[model_letter(idx)] = rank_color(prev, total)
+    return colors
 
 
 def model_summary_text(m: ModelData) -> str:

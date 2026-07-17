@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from textual.containers import Horizontal
 from textual.widgets import Button, Static
 
-from sfctl.constants import ARROW_DOWN, ARROW_UP
+from sfctl.constants import ARROW_DOWN, ARROW_UP, DIFF_ADD_STYLE, DIFF_DEL_STYLE
 from sfctl.ids import (
     Context,
     model_id,
@@ -88,7 +88,7 @@ class VotingController:
         score = getattr(self._app.scores[idx], context)
         sign = f"+{score}" if score > 0 else str(score)
         arrow = ARROW_UP if delta > 0 else ARROW_DOWN
-        color = "green" if delta > 0 else "red"
+        color = DIFF_ADD_STYLE if delta > 0 else DIFF_DEL_STYLE
         self._app._status(f"[{color}]{arrow}[/] {model_letter(idx)} {context}: {sign}")
 
     def vote(self, delta: int) -> None:

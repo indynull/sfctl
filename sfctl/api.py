@@ -121,14 +121,18 @@ async def _fetch_trace(
 
 def _extract_trace_ref(data: dict) -> str:
     """Extract traceRef from history data (for proposal tasks)."""
-    history = data.get("history", [])
-    if not isinstance(history, list):
-        history = [history]
+    from sfctl.history import as_history_list
+
+    history = as_history_list(data.get("history"))
     if not history:
         return ""
-    cq = history[-1].get("coding_question", {})
+    cq = history[-1].get("coding_question", {}) or {}
+    if not isinstance(cq, dict):
+        return ""
     rollout = cq.get("rollouts", {}).get("A") or cq.get("rolloutA") or cq.get("rollout") or {}
-    return rollout.get("traceRef", "")
+    if not isinstance(rollout, dict):
+        return ""
+    return rollout.get("traceRef", "") or ""
 
 
 async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
@@ -159,8 +163,10 @@ async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
             ),
         )
 
+        from sfctl.history import as_history_list
+
         task_resp = r_task.json()
-        history = r_history.json()
+        history = as_history_list(r_history.json())
         feedback = r_feedback.json()
         content = r_content.json()
 
@@ -175,7 +181,8 @@ async def _fetch_data_async(task_id: str, cookies: dict[str, str]) -> dict:
 
     TaskResponse.model_validate(task_resp)
     for h in history:
-        HistoryEntry.model_validate(h)
+        if isinstance(h, dict):
+            HistoryEntry.model_validate(h)
     FeedbackResponse.model_validate(feedback)
     ContentResponse.model_validate(content)
 

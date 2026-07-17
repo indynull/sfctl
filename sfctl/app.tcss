@@ -6,8 +6,8 @@ Screen { background: $surface; }
 .info-row      { margin: 0 1; }
 .status        { color: $text-muted; text-style: italic; padding: 0 1; }
 /* Arena: response summary at 80-col terminal width (toggle with w) */
-.response-wrap { width: 1fr; height: auto; }
-.response-wrap-narrow { align: center top; width: 1fr; }
+.response-wrap { width: 100%; height: auto; }
+.response-wrap-narrow { align: center top; width: 100%; }
 .response-terminal-width {
   width: 80;
   max-width: 80;
@@ -50,28 +50,61 @@ DiffDisplay { height: auto; max-height: 50; }
 .trace-t9, .trace-t9 > CollapsibleTitle { color: #af8700; }
 .trace-block { margin: 0 0 0 2; padding: 0; color: $text-muted; }
 
-/* Info bar + content split */
-#info-bar     { height: 20fr; background: $surface; border-bottom: hkey $primary 40%; overflow-y: auto; }
-#content-area { height: 80fr; }
+/* Info bar + content split.
+   Prompt needs real vertical space: long prompts are often one wrapped paragraph.
+   Meta chrome is height:auto; the prompt panel takes the rest of the bar. */
+#info-bar {
+  height: 36fr;
+  min-height: 14;
+  layout: vertical;
+  background: $surface;
+  border-bottom: hkey $primary 40%;
+  overflow-y: hidden;
+}
+#content-area { height: 64fr; }
 #status-bar   { dock: bottom; height: 1; padding: 0 1; color: $text-muted; background: $panel; }
 
 /* Split handle */
 SplitHandle { color: $primary 40%; }
 SplitHandle:hover { color: $accent; }
-#task-bar    { height: auto; padding: 0 1; color: $accent; background: $panel; }
-#scoreboard  { height: auto; padding: 0 1; color: $text; background: $panel; }
-#repo-bar    { height: auto; padding: 0 1; color: $text-muted; }
-#prompt-label { height: auto; padding: 0 1; margin: 1 0 0 0; text-style: bold; color: $text-muted; }
-#prompt-bar   { height: 1fr; padding: 0 1; margin: 0; }
+#info-meta { height: auto; }
+#task-bar    { height: 1; padding: 0 1; color: $accent; background: $panel; }
+#scoreboard  { height: auto; max-height: 2; padding: 0 1; color: $text; background: $panel; }
+#repo-bar    { height: 1; padding: 0 1; color: $text-muted; }
+#prompt-panel {
+  height: 1fr;
+  min-height: 8;
+  layout: vertical;
+  border-top: hkey $primary 25%;
+}
+#prompt-label {
+  height: 1;
+  padding: 0 1;
+  margin: 0;
+  text-style: bold;
+  color: $text-muted;
+  background: $panel-darken-1;
+}
+#prompt-bar {
+  height: 1fr;
+  min-height: 6;
+  padding: 0 1 1 1;
+  margin: 0;
+  scrollbar-gutter: stable;
+}
+#prompt-text { height: auto; width: 100%; }
 
 /* Unified view */
 #unified-view      { height: 1fr; }
 .unified-responses { height: 3fr; }
 .split-col         { width: 1fr; border-right: vkey $primary 30%; }
 .split-col:last-of-type { border-right: none; }
-.split-active { outline: solid $accent; }
+.split-active { outline: solid $accent; opacity: 100%; }
+.split-dim    { opacity: 72%; }
 .split-scroll      { height: 1fr; }
-.unified-overview  { height: 2fr; border-top: hkey $primary 30%; }
+.unified-split-handle { height: 1; background: $primary 30%; }
+.unified-split-handle:hover { color: $accent; background: $accent 40%; }
+.unified-overview  { height: 2fr; }
 .unified-section   { height: auto; padding: 1 1; }
 
 /* Overview tabs */
@@ -81,11 +114,111 @@ SplitHandle:hover { color: $accent; }
 #justification-editor   { height: auto; min-height: 10; margin: 0 1; }
 #justification-preview  { height: auto; padding: 1; }
 
+/* Arena multi-field justifications */
+#arena-checklist,
+#arena-checklist-u { height: auto; margin: 0 1 1 1; }
+.just-section {
+  /* Clickable target for per-field edit (preview or section). */
+  height: auto;
+  margin: 0 1 1 1;
+  padding: 0 1 1 1;
+  border: round $primary 35%;
+  background: $panel-darken-1;
+}
+.just-section > .section-title { margin: 1 0 0 0; }
+.just-preview { height: auto; min-height: 2; padding: 0 1 1 1; }
+.just-editor  { height: auto; min-height: 8; margin: 0 0 0 0; }
+/* Shared status chips (CQ, path triage Buttons, future badges).
+   Rich list/header chips in badges.py mirror these tones. */
+.ui-badge {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  height: 1;
+  margin: 0 0 1 0;
+  padding: 0 1;
+  border: none;
+  color: $text;
+  text-style: none;
+  content-align: left middle;
+  background: $boost;
+}
+.ui-badge-success { background: $success 22%; }
+.ui-badge-warning { background: $warning 22%; }
+.ui-badge-info { background: $primary 28%; }
+.ui-badge-error { background: $error 18%; }
+.ui-badge-muted { background: $primary 12%; color: $text-muted; }
+.ui-badge-primary { background: $primary 28%; }
+.ui-badge:hover,
+.ui-badge:focus {
+  color: $text;
+  text-style: bold;
+}
+.ui-badge-success:hover,
+.ui-badge-success:focus { background: $success 40%; }
+.ui-badge-warning:hover,
+.ui-badge-warning:focus { background: $warning 40%; }
+.ui-badge-info:hover,
+.ui-badge-info:focus { background: $primary 45%; }
+.ui-badge-error:hover,
+.ui-badge-error:focus { background: $error 40%; }
+.ui-badge-muted:hover,
+.ui-badge-muted:focus { background: $primary 22%; }
+.ui-badge-primary:hover,
+.ui-badge-primary:focus { background: $primary 45%; }
+
+/* Stack CQ chips vertically so long catalogs never run off the right edge. */
+.violation-chip-row {
+  layout: vertical;
+  height: auto;
+  max-height: 12;
+  width: 100%;
+  margin: 0 1 1 1;
+  overflow-y: auto;
+  align: left top;
+}
+/* CQ click targets keep .violation-chip / .violation-mark for handlers;
+   visual tone comes from ui-badge / ui-badge-error / ui-badge-primary. */
+
+/* CQ mark modal */
+ChecklistMarkModal { align: center middle; background: $background 60%; }
+#checklist-mark-modal {
+  width: 76%;
+  height: auto;
+  max-height: 78%;
+  border: tall $primary;
+  background: $panel;
+  padding: 1 2;
+}
+#checklist-mark-model { height: auto; margin: 0 0 1 0; padding: 0 0 0 0; }
+#checklist-mark-filter { margin: 0 0 1 0; }
+#checklist-mark-list {
+  height: auto;
+  max-height: 28;
+  padding: 0;
+}
+#checklist-mark-list > .option-list--option {
+  padding: 0 1;
+}
+#checklist-mark-list > .option-list--option-highlighted {
+  background: $primary 22%;
+}
+#checklist-mark-list > .option-list--option-disabled {
+  color: $text;
+  text-style: none;
+  background: $surface;
+}
+
 /* Yank modal */
 YankCommentModal    { align: center middle; background: $background 60%; }
 #yank-comment-modal { width: 80%; height: auto; max-height: 60%; border: tall $primary; background: $panel; padding: 1 2; }
 #yank-preview       { height: auto; max-height: 12; margin: 0 0 1 0; }
 #yank-comment       { dock: bottom; margin: 1 0 0 0; }
+
+/* Violation why modal */
+ViolationWhyModal    { align: center middle; background: $background 60%; }
+#violation-why-modal { width: 70%; height: auto; max-height: 40%; border: tall $error 60%; background: $panel; padding: 1 2; }
+#violation-why-input { margin: 1 0 0 0; }
 
 /* Diff search modal */
 DiffSearchModal    { align: center top; background: $background 60%; }
@@ -109,6 +242,239 @@ CommentsModal    { align: center middle; background: $background 60%; }
 #comments-preview { height: auto; max-height: 50; padding: 1; }
 #comments-editor  { height: auto; min-height: 10; max-height: 50; margin: 0; }
 
-/* Help modal */
-HelpModal    { align: center middle; background: $background 60%; }
-#help-modal  { width: 70%; height: auto; max-height: 70%; border: tall $primary; background: $panel; padding: 1 2; }
+/* Help modal (app shortcuts / tutorial) */
+HelpModal { align: center middle; background: $background 60%; }
+#help-modal {
+  width: 64;
+  max-width: 92%;
+  height: auto;
+  max-height: 80%;
+  border: tall $accent;
+  background: $panel;
+  padding: 1 2 0 2;
+}
+.help-modal-title {
+  width: 100%;
+  text-align: center;
+  text-style: bold;
+  color: $accent;
+  margin: 0 0 1 0;
+}
+#help-modal-body {
+  height: auto;
+  max-height: 32;
+  padding: 0 1 1 1;
+}
+#help-modal-content {
+  height: auto;
+  color: $text;
+}
+.help-modal-footer {
+  width: 100%;
+  text-align: center;
+  color: $text-muted;
+  padding: 1 0 1 0;
+  border-top: solid $primary 25%;
+}
+
+/* Shared-compare help (structured, scannable) */
+SharedCompareHelpScreen { align: center middle; background: $background 55%; }
+#shared-help-modal {
+  width: 68;
+  max-width: 94%;
+  height: auto;
+  max-height: 88%;
+  border: tall $accent;
+  background: $panel;
+  padding: 1 2 0 2;
+}
+.shared-help-title {
+  width: 100%;
+  text-align: center;
+  text-style: bold;
+  color: $accent;
+  margin: 0 0 0 0;
+}
+.shared-help-lede {
+  width: 100%;
+  text-align: center;
+  color: $text-muted;
+  margin: 0 0 1 0;
+  padding: 0 1 1 1;
+  border-bottom: solid $primary 25%;
+}
+#shared-help-body {
+  height: auto;
+  max-height: 34;
+  padding: 0 0 1 0;
+}
+.shared-help-h {
+  width: 100%;
+  text-style: bold;
+  color: $text;
+  background: $primary 30%;
+  padding: 0 1;
+  margin: 1 0 0 0;
+}
+.shared-help-p {
+  height: auto;
+  color: $text-muted;
+  padding: 0 1;
+  margin: 0 0 0 0;
+}
+.shared-help-block {
+  height: auto;
+  color: $text;
+  padding: 0 1 1 1;
+  margin: 0 0 0 0;
+}
+.shared-help-legend {
+  color: $text;
+}
+.shared-help-keys {
+  color: $text;
+}
+.shared-help-tip {
+  color: $text-muted;
+}
+.shared-help-footer {
+  width: 100%;
+  text-align: center;
+  color: $text-muted;
+  padding: 1 0 1 0;
+  border-top: solid $primary 25%;
+}
+
+/* Shared three-model file compare */
+SharedCompareScreen { align: center middle; background: $background 40%; }
+SharedCompareScreen > Footer {
+  dock: bottom;
+  width: 100%;
+}
+#shared-compare-modal {
+  width: 96%;
+  height: 1fr;
+  max-height: 92%;
+  margin: 1 2;
+  border: tall $primary 50%;
+  background: $panel;
+  padding: 1 1;
+}
+#shared-compare-title {
+  height: auto;
+  padding: 0 1 1 1;
+  color: $text-muted;
+  text-style: none;
+}
+.shared-compare-layout { height: 1fr; layout: horizontal; }
+#shared-file-list {
+  /* Content ~40 cols (list_prompt geometry); +2 padding, +border room. */
+  width: 44;
+  height: 1fr;
+  border-right: solid $primary 30%;
+  padding: 0 0 0 0;
+}
+/* File rows are two lines; group headers are one line (auto height). */
+#shared-file-list > .option-list--option {
+  padding: 0 1;
+  color: $text;
+  height: auto;
+  text-wrap: nowrap;
+}
+#shared-file-list > .option-list--option-highlighted {
+  background: $primary 28%;
+  color: $text;
+}
+#shared-file-list > .option-list--option-disabled {
+  color: $text;
+  text-style: none;
+  background: $primary 12%;
+  padding: 0 1;
+}
+#shared-compare-detail { width: 1fr; height: 1fr; padding: 0 1; }
+#shared-compare-summary {
+  height: auto;
+  padding: 0 0 1 0;
+  margin: 0 0 1 0;
+  border-bottom: solid $primary 20%;
+  color: $text;
+}
+.shared-empty-hint {
+  height: auto;
+  padding: 0 0 1 0;
+  color: $text-muted;
+}
+.shared-keys-hint {
+  height: auto;
+  width: 100%;
+  padding: 0 1;
+  margin: 0 0 1 0;
+  color: $text-muted;
+  background: $primary 18%;
+  border-left: thick $accent;
+}
+.shared-region-banner {
+  height: auto;
+  margin: 1 0 0 0;
+  padding: 0 1;
+  color: $warning;
+  text-style: bold;
+  background: $warning 10%;
+  border-left: thick $warning;
+}
+.shared-section { margin: 0 0 0 1; }
+.shared-section > .collapsible--title {
+  text-style: bold;
+}
+.shared-kind-same > .collapsible--title,
+.shared-kind-identical > .collapsible--title {
+  color: $success;
+}
+.shared-kind-diverge > .collapsible--title {
+  color: $warning;
+}
+.shared-kind-pair > .collapsible--title {
+  color: $accent;
+}
+.shared-kind-new > .collapsible--title {
+  color: $secondary;
+}
+.shared-kind-deleted > .collapsible--title {
+  color: $error;
+}
+.shared-kind-only > .collapsible--title {
+  color: $text-muted;
+}
+.shared-kind-region {
+  color: $warning;
+}
+.shared-section DiffDisplay,
+.shared-section-diff {
+  height: auto;
+  max-height: 36;
+  margin: 0 0 1 0;
+  padding: 0 0 0 1;
+}
+/* Multi-design site: linear site header + tabs for alternate bodies. */
+.shared-design-tabs {
+  height: auto;
+  margin: 0 0 1 1;
+  border: round $primary 35%;
+  background: $panel-darken-1;
+  padding: 0 0 1 0;
+}
+.shared-design-tabs > ContentSwitcher {
+  height: auto;
+}
+.shared-design-tabs Underline {
+  background: $primary 20%;
+}
+.shared-design-tabs Tab {
+  padding: 0 1;
+}
+.shared-design-tabs DiffDisplay,
+.shared-design-tabs .shared-section-diff {
+  height: auto;
+  max-height: 36;
+  margin: 0 1 0 1;
+}

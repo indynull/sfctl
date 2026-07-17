@@ -45,7 +45,7 @@ class TaskHandler(ABC):
 
     @property
     def has_model_tabs(self) -> bool:
-        """Whether model views use Response/Trace/Diffs tabbed content."""
+        """Whether model views use Response / Trace / Diffs tabs."""
         return False
 
     @property
@@ -80,8 +80,11 @@ class TaskHandler(ABC):
         return ""
 
     def response_wrap_classes(self) -> str:
-        """CSS classes for the container that holds the response summary."""
-        return "response-wrap"
+        """CSS classes for an optional host around the response summary.
+
+        Empty means mount the response Static directly (classic ranking).
+        """
+        return ""
 
     def model_header_label(self, idx: int) -> str:
         """Build the header label for a model column."""
@@ -104,6 +107,10 @@ class TaskHandler(ABC):
 
         Returns list of (label, tab_id, deferred_key) tuples.
         """
+        return []
+
+    def shared_file_compares(self) -> list:
+        """Shared-file comparisons for multi-model ranking (empty if N/A)."""
         return []
 
     @abstractmethod

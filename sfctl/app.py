@@ -9,8 +9,9 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
-from textual.events import Click
+from textual.events import Click, Event, MouseScrollDown, MouseScrollUp
 from textual.reactive import reactive
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     Collapsible,
@@ -36,7 +37,6 @@ from sfctl.formatting import (
     format_event_line,
     format_timestamp,
     group_events,
-    rank_color,
     sanitize,
     trace_type_color,
 )
@@ -106,8 +106,12 @@ class StarfleetApp(App):
     TITLE = "Starfleet Control"
     COMMANDS = {NavigationProvider}
     CSS_PATH = "app.tcss"
+    # Custom maximize (f) + Escape; do not let Textual steal Escape for minimize.
+    ESCAPE_TO_MINIMIZE = False
 
-    _EMPTY_SUMMARY = "*No summary yet -- press ctrl+e to write one, y to yank snippets.*"
+    _EMPTY_SUMMARY = (
+        "*No summary yet — press Ctrl+E to write one, y to copy snippets.*"
+    )
 
     current_model_index: reactive[int] = reactive(0)
     scores: reactive[list[ModelScores]] = reactive(list, always_update=True)
@@ -129,26 +133,28 @@ class StarfleetApp(App):
         Binding("m", "go_model_proposal", "Model", show=True),
         Binding("+", "vote_up", f"{ARROW_UP} Up", show=True),
         Binding("-", "vote_down", f"{ARROW_DOWN} Down", show=True),
-        Binding("ctrl+f", "search_diffs", "Find", show=True),
-        Binding("ctrl+g", "search_events", "Events", show=False),
-        Binding("ctrl+e", "edit_justification", "Edit", show=False),
-        Binding("e", "toggle_collapse", "Toggle Fold", show=False),
-        Binding("f", "toggle_maximize", "Toggle Focus", show=True),
-        Binding("c", "copy_summary", "Copy", show=False),
-        Binding("C", "copy_comments", "Copy Notes", show=False),
-        Binding("y", "yank_file", "Yank", show=False),
-        Binding("n", "add_comment", "Note", show=False),
-        Binding("ctrl+n", "edit_comments", "Edit Notes", show=False),
-        Binding("u", "split_view", "Toggle Split", show=True),
-        Binding("t", "translate", "Toggle Translate", show=True),
+        Binding("ctrl+f", "search_diffs", "Find Files", show=True),
+        Binding("ctrl+g", "search_events", "Find Events", show=False),
+        Binding("ctrl+e", "edit_justification", "Edit Justification", show=False),
+        Binding("e", "toggle_collapse", "Expand or Collapse", show=False),
+        Binding("f", "toggle_maximize", "Maximize", show=True),
+        Binding("c", "copy_summary", "Copy Review", show=False),
+        Binding("C", "copy_comments", "Copy Comments", show=False),
+        Binding("y", "yank_file", "Copy Snippet", show=False),
+        Binding("n", "add_comment", "Add Comment", show=False),
+        Binding("ctrl+n", "edit_comments", "Edit Comments", show=False),
+        Binding("u", "split_view", "Side by Side", show=True),
+        Binding("t", "translate", "Translate", show=True),
         Binding("r", "refresh_data", "Refresh", show=False),
-        Binding("ctrl+r", "reset_local", "Reset", show=False),
-        Binding("@", "toggle_emails", "Toggle Emails", show=False),
-        Binding("w", "toggle_response_width", "80-col", show=True),
+        Binding("ctrl+r", "reset_local", "Reset Local", show=False),
+        Binding("@", "toggle_emails", "Show Emails", show=False),
+        Binding("w", "toggle_response_width", "80 Columns", show=True),
+        Binding("v", "mark_checklist", "Mark Code Quality", show=False),
+        Binding("s", "shared_compare", "Compare Files", show=False),
         Binding("?", "help", "Help", show=True),
         Binding("q", "quit", "Quit", show=True),
         Binding("tab", "next_tab", "Next Tab", show=False, priority=True),
-        Binding("shift+tab", "prev_tab", "Prev Tab", show=False, priority=True),
+        Binding("shift+tab", "prev_tab", "Previous Tab", show=False, priority=True),
     ]
 
     def __init__(
@@ -188,6 +194,7 @@ class StarfleetApp(App):
         self._deferred_tabs: dict[str, tuple] = {}
         self._maximized = False
         self._status_timer = None
+        self._shared_compares_cache: list = []
 
         self._update_sub_title()
 
@@ -207,8 +214,10 @@ class StarfleetApp(App):
         self.sub_title = "  |  ".join(parts)
 
     def _get_history(self) -> list:
-        """Return the history list from the task data."""
-        return self.data.get("history", [])
+        """Return the history list from the task data (always a list)."""
+        from sfctl.history import as_history_list
+
+        return as_history_list(self.data.get("history"))
 
     def nav_items(self) -> list[tuple[str, str]]:
         return ranking.nav_items(self.models)
@@ -217,22 +226,24 @@ class StarfleetApp(App):
         return ranking.diff_items(self.models)
 
     def _compose_info_bar(self) -> ComposeResult:
-        """Compose the shared top info bar."""
+        """Compose the shared top info bar (compact meta + readable prompt)."""
         repo = self.parsed.repository
         self.task_url = get_web_url(f"/tasks/{self.task_id}")
         with Vertical(id=ids.INFO_BAR):
-            yield Link(f"Task: {self.task_id}", url=self.task_url, id=ids.TASK_BAR)
-            yield Static(self.rankings_summary(), id=ids.SCOREBOARD)
-            if repo and repo != EM_DASH:
-                yield Static(
-                    f"[bold]Repo:[/bold] {sanitize(repo)}",
-                    id=ids.REPO_BAR,
-                )
+            with Vertical(id="info-meta"):
+                yield Link(f"Task: {self.task_id}", url=self.task_url, id=ids.TASK_BAR)
+                yield Static(self.rankings_summary(), id=ids.SCOREBOARD)
+                if repo and repo != EM_DASH:
+                    yield Static(
+                        f"[bold]Repo:[/bold] {sanitize(repo)}",
+                        id=ids.REPO_BAR,
+                    )
             prompt = self.handler.prompt_source() or EM_DASH
             prompt = bump_headings(prompt)
-            yield Static("[bold]Prompt[/bold]", id="prompt-label")
-            with ScrollableContainer(id=ids.PROMPT_BAR):
-                yield Static(RichMarkdown(prompt), id="prompt-text")
+            with Vertical(id="prompt-panel"):
+                yield Static("[bold]Prompt[/bold]", id="prompt-label")
+                with ScrollableContainer(id=ids.PROMPT_BAR):
+                    yield Static(RichMarkdown(prompt), id="prompt-text")
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -276,7 +287,7 @@ class StarfleetApp(App):
 
             if self.handler.supports_split:
                 with Vertical(id=ids.UNIFIED_VIEW):
-                    with Horizontal(classes="unified-responses"):
+                    with Horizontal(id="unified-responses", classes="unified-responses"):
                         for idx in range(n):
                             mid = model_id(idx)
                             with Vertical(
@@ -291,6 +302,13 @@ class StarfleetApp(App):
                                     id=f"split-scroll-{mid}",
                                     classes="split-scroll",
                                 )
+                    # Resize models strip vs history/overview below.
+                    yield SplitHandle(
+                        "unified-responses",
+                        "unified-overview",
+                        id="unified-split-handle",
+                        classes="unified-split-handle",
+                    )
                     yield ScrollableContainer(
                         id="unified-overview",
                         classes="unified-overview",
@@ -376,7 +394,14 @@ class StarfleetApp(App):
             await bh_c.query_one(Collapsible.Contents).mount(Static(bh_lines))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        self._voting.handle_button(event.button.id or "")
+        btn = event.button
+        if btn.has_class("violation-mark"):
+            self._editor.open_checklist_mark_modal()
+            return
+        if btn.has_class("violation-chip"):
+            self._editor.prompt_violation_note(btn)
+            return
+        self._voting.handle_button(btn.id or "")
 
     def _model_header_label(self, idx: int) -> str:
         return self.handler.model_header_label(idx)
@@ -407,19 +432,25 @@ class StarfleetApp(App):
         resp_widgets.extend(
             self.handler.response_chrome_widgets(idx, id_prefix=chrome_prefix)
         )
-        wrap_id = f"{chrome_prefix}response-wrap-{idx}"
-        wrap = Vertical(
-            id=wrap_id,
-            classes=self.handler.response_wrap_classes(),
-        )
-        body = Static(
-            RichMarkdown(summary),
-            id=response_widget_id,
-            classes=self.handler.response_body_classes(),
-        )
-        resp_widgets.append(wrap)
-        await resp_pane.mount_all(resp_widgets)
-        await wrap.mount(body)
+        body_classes = self.handler.response_body_classes()
+        body_kwargs: dict = {"id": response_widget_id}
+        if body_classes:
+            body_kwargs["classes"] = body_classes
+        body = Static(RichMarkdown(summary), **body_kwargs)
+        wrap_classes = self.handler.response_wrap_classes()
+        if wrap_classes:
+            # Arena 80-column preview host (centering + outline). Classic ranking
+            # mounts the response Static directly to avoid layout breakage.
+            wrap = Vertical(
+                id=f"{chrome_prefix}response-wrap-{idx}",
+                classes=wrap_classes,
+            )
+            resp_widgets.append(wrap)
+            await resp_pane.mount_all(resp_widgets)
+            await wrap.mount(body)
+        else:
+            resp_widgets.append(body)
+            await resp_pane.mount_all(resp_widgets)
         trace_pane = TabPane(f"Trace ({len(m.tool_events)})", id=trace_id)
         await tabs.add_pane(trace_pane)
         diffs_pane = TabPane(f"Diffs ({len(m.file_diffs)})", id=diffs_id)
@@ -595,21 +626,29 @@ class StarfleetApp(App):
         )
         SessionHistory().record(session)
 
-    async def on_collapsible_expanded(self, event: Collapsible.Expanded) -> None:
-        c = event.collapsible
-        if not isinstance(c, LazyCollapsible):
+    async def _populate_lazy_collapsible(self, c: LazyCollapsible) -> None:
+        """Mount deferred LazyCollapsible content (diff body or trace events).
+
+        Safe to call more than once: consumed payloads leave the collapsible
+        unchanged. Used by expand handlers and by search/navigation that need
+        content before querying child widgets.
+        """
+        if not c.is_attached:
             return
         lazy = c.lazy
 
-        # Lazy diff loading
         if lazy.diff is not None:
             diff_text = lazy.diff
-            lazy.diff = None  # consume
-            await self._mount_into(c, DiffDisplay(diff_text, lazy.letter, lazy.filename))
+            lazy.diff = None
+            try:
+                await self._mount_into(
+                    c, DiffDisplay(diff_text, lazy.letter, lazy.filename),
+                )
+            except Exception:
+                return
             self._search.flush_pending_grep()
             return
 
-        # Lazy trace event loading
         if lazy.events and not lazy.populated:
             lazy.populated = True
             dict_events = list(lazy.events)
@@ -623,12 +662,24 @@ class StarfleetApp(App):
                     classes=f"trace-event-c inner {type_cls}",
                 )
                 collapsibles.append(inner_c)
-            # Mount first so Contents exists, then populate details
-            await c.query_one(Collapsible.Contents).mount_all(collapsibles)
+            try:
+                await c.query_one(Collapsible.Contents).mount_all(collapsibles)
+            except Exception:
+                return
             for inner_c, ev in zip(collapsibles, dict_events, strict=True):
+                if not inner_c.is_attached:
+                    continue
                 detail = trace_event_detail_widgets(ev)
                 if detail:
-                    await self._mount_into(inner_c, *detail)
+                    try:
+                        await self._mount_into(inner_c, *detail)
+                    except Exception:
+                        pass
+
+    async def on_collapsible_expanded(self, event: Collapsible.Expanded) -> None:
+        c = event.collapsible
+        if isinstance(c, LazyCollapsible):
+            await self._populate_lazy_collapsible(c)
 
     async def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         if (
@@ -662,6 +713,8 @@ class StarfleetApp(App):
                     LazyCollapsible.for_diff(fd.filename, fd.diff, "S", classes="inner")
                     for fd in self.proposal.file_diffs
                 ])
+            elif kind == "shared-files":
+                await self._populate_shared_files_tab(event.pane)
 
     @property
     def _current_section(self) -> str | None:
@@ -692,16 +745,27 @@ class StarfleetApp(App):
                 col = self.query_one(f"#split-{model_id(idx)}", Vertical)
                 if self._split_focus == idx:
                     col.add_class("split-active")
+                    col.remove_class("split-dim")
                 else:
                     col.remove_class("split-active")
+                    # Dim only when a focus target is set (including overview).
+                    if self._split_focus is not None:
+                        col.add_class("split-dim")
+                    else:
+                        col.remove_class("split-dim")
             except Exception:
                 pass
         try:
             ov = self.query_one("#unified-overview", ScrollableContainer)
             if self._split_focus == -1:
                 ov.add_class("split-active")
+                ov.remove_class("split-dim")
             else:
                 ov.remove_class("split-active")
+                if self._split_focus is not None:
+                    ov.add_class("split-dim")
+                else:
+                    ov.remove_class("split-dim")
         except Exception:
             pass
 
@@ -724,9 +788,17 @@ class StarfleetApp(App):
         if action == "translate":
             return True
         if action == "edit_justification":
-            return self._is_on_overview()
+            # Available anywhere; action navigates to overview and opens the editor.
+            return self.task_type in (
+                TaskType.CODE_REVIEW,
+                TaskType.ARENA_RANKING,
+            )
         if action == "toggle_response_width":
             return self.task_type == TaskType.ARENA_RANKING
+        if action == "mark_checklist":
+            return self.task_type == TaskType.ARENA_RANKING
+        if action == "shared_compare":
+            return bool(self.handler.shared_file_compares())
         if action == "toggle_collapse":
             return self._is_on_model_view() or self._is_on_overview()
         return True
@@ -830,7 +902,7 @@ class StarfleetApp(App):
         return self.handler.response_source(idx)
 
     def _response_display_text(self, idx: int, raw: str) -> str:
-        """Apply handler presentation (e.g. CQ viewport markers) to response text."""
+        """Apply handler presentation (for example viewport markers) to response text."""
         return self.handler.prepare_response_text(idx, raw)
 
     def _apply_translations(self) -> None:
@@ -1075,13 +1147,17 @@ class StarfleetApp(App):
             except Exception:
                 pass
         try:
-            responses = self.query_one(".unified-responses", Horizontal)
+            responses = self.query_one("#unified-responses", Horizontal)
             responses.display = focus >= 0
         except Exception:
             pass
         try:
             ov = self.query_one("#unified-overview", ScrollableContainer)
             ov.display = focus == -1
+        except Exception:
+            pass
+        try:
+            self.query_one("#unified-split-handle").display = False
         except Exception:
             pass
 
@@ -1104,7 +1180,7 @@ class StarfleetApp(App):
         except Exception:
             pass
         try:
-            self.query_one(".unified-responses", Horizontal).display = True
+            self.query_one("#unified-responses", Horizontal).display = True
         except Exception:
             pass
         for idx in range(self._split_model_count()):
@@ -1114,6 +1190,10 @@ class StarfleetApp(App):
                 pass
         try:
             self.query_one("#unified-overview", ScrollableContainer).display = True
+        except Exception:
+            pass
+        try:
+            self.query_one("#unified-split-handle").display = True
         except Exception:
             pass
         self._maximized = False
@@ -1181,13 +1261,15 @@ class StarfleetApp(App):
         self._voting.vote(-1)
 
     def action_reset_local(self) -> None:
+        self._editor.discard_open_editors()
         self.review.reset(len(self.models), self._get_history())
         self.scores = self.review.scores
+        self._editor.sync_widgets_from_state()
         self._editor.refresh_overview_annotations()
         self._status("Reset to server state.")
 
     def _session_ms(self) -> int:
-        history = self.data.get("history", [])
+        history = self._get_history()
         entry = history[-1] if history else {}
         ms = 0
         for s in (entry.get("finalUserTaskSessionTimes") or []):
@@ -1215,32 +1297,34 @@ class StarfleetApp(App):
         self._apply_model_header_colors()
 
     def _apply_model_header_colors(self) -> None:
-        """Tint model headers green/yellow/red from local votes or last ranking."""
-        has_local_votes = any(s.any_nonzero() for s in self.scores)
-        history = self.data.get("history", [])
+        """Color model letters green/yellow/red from local votes or last ranking.
+
+        Matches the scoreboard (letter color only). Full-bar solid backgrounds
+        made unified columns hard to read and clashed with theme chrome.
+        Applies to single-model headers and unified split headers.
+        """
+        history = self._get_history()
         n = len(self.models)
+        colors = ranking.model_letter_colors(self.scores, history, n)
 
         for idx in range(n):
+            letter = model_letter(idx)
+            color = colors.get(letter)
             label = self.handler.model_header_label(idx)
-            bg = None
-            if has_local_votes:
-                rank = ranking.model_rank(self.scores, idx)
-                if rank is not None:
-                    bg = rank_color(rank, n)
-            else:
-                prev_rank = ranking.previous_model_rank(history, idx)
-                if prev_rank is not None:
-                    bg = rank_color(prev_rank, n)
+            if color and f"[bold]{letter}[/bold]" in label:
+                label = label.replace(
+                    f"[bold]{letter}[/bold]",
+                    f"[bold {color}]{letter}[/]",
+                    1,
+                )
             mid = model_id(idx)
             for hid in (model_header_id(mid), f"split-header-{mid}"):
                 h = self.query_one_optional(f"#{hid}", Static)
                 if h is None:
                     continue
                 h.update(label)
-                if bg is not None:
-                    h.styles.background = bg
-                else:
-                    h.styles.background = None
+                # Keep CSS .view-header background ($primary), not solid rank fill.
+                h.styles.background = None
 
     @staticmethod
     def _model_summary_text(m: ModelData) -> str:
@@ -1258,39 +1342,134 @@ class StarfleetApp(App):
     def action_copy_comments(self) -> None:
         self._editor.copy_comments()
 
-    def on_click(self, event: Click) -> None:
-        if self._current_section != ids.UNIFIED_VIEW:
-            return
-        widget = event.widget
+    def _select_unified_from_widget(self, widget: Widget | None) -> bool:
+        """Select the unified model column or overview under *widget*.
+
+        Used for click and mouse-wheel interaction so scrolling an unfocused
+        column activates it (visual + keyboard focus). Returns True when the
+        pointer is over a selectable unified region.
+        """
+        if self._current_section != ids.UNIFIED_VIEW or widget is None:
+            return False
         while widget is not None and widget is not self:
             wid = widget.id or ""
             if wid == "unified-overview":
                 if self._split_focus != -1:
                     self._split_focus = -1
                     self._update_split_focus()
+                    if self._maximized:
+                        self._apply_split_maximize_display()
                     self.refresh_bindings()
-                    widget.focus()
-                return
-            if wid.startswith("split-") and hasattr(widget, "has_class") and widget.has_class("split-col"):
+                    try:
+                        self.query_one("#unified-overview", ScrollableContainer).focus()
+                    except Exception:
+                        pass
+                return True
+            if (
+                wid.startswith("split-")
+                and hasattr(widget, "has_class")
+                and widget.has_class("split-col")
+            ):
                 for idx in range(self._split_model_count()):
                     if wid == f"split-{model_id(idx)}":
                         if self._split_focus != idx:
                             self._split_focus = idx
                             self.current_model_index = idx
                             self._update_split_focus()
+                            if self._maximized:
+                                self._apply_split_maximize_display()
                             self.refresh_bindings()
                             try:
                                 self.query_one(
-                                    f"#split-scroll-{model_id(idx)}", ScrollableContainer,
+                                    f"#split-scroll-{model_id(idx)}",
+                                    ScrollableContainer,
                                 ).focus()
                             except Exception:
                                 pass
-                        return
+                        return True
             widget = widget.parent
+        return False
+
+    def on_click(self, event: Click) -> None:
+        if self._try_edit_justification_from_widget(event.widget):
+            return
+        self._select_unified_from_widget(event.widget)
+
+    def _justification_key_from_widget(self, widget: Widget | None) -> str | None:
+        """Map a clicked widget to an arena justification field key, if any."""
+        w = widget
+        while w is not None and w is not self:
+            wid = getattr(w, "id", None)
+            if isinstance(wid, str):
+                key = ids.justification_key_from_widget_id(wid)
+                if key is not None:
+                    return key
+            w = w.parent
+        return None
+
+    def _try_edit_justification_from_widget(self, widget: Widget | None) -> bool:
+        """Open the justification editor for a clicked preview/section."""
+        if self.task_type not in (TaskType.CODE_REVIEW, TaskType.ARENA_RANKING):
+            return False
+        key = self._justification_key_from_widget(widget)
+        if key is None:
+            return False
+        self.run_worker(
+            self._open_justification_editor(key if key else None),
+            exclusive=True,
+            name="edit-justification-click",
+        )
+        return True
+
+    async def _open_justification_editor(self, key: str | None) -> None:
+        """Open a justification editor (in unified overview or dedicated overview)."""
+        if self._current_section == ids.UNIFIED_VIEW:
+            self._split_focus = -1
+            self._update_split_focus()
+            try:
+                self.query_one("#unified-overview", ScrollableContainer).focus()
+            except Exception:
+                pass
+        else:
+            await self.go_to("overview")
+            try:
+                tabs = self.query_one(f"#{ids.TABS_OVERVIEW}", TabbedContent)
+                tabs.active = ids.TAB_CURRENT
+            except Exception:
+                pass
+            await self._populate_overview()
+        if self.task_type == TaskType.ARENA_RANKING and key:
+            self._editor.show_justification_editor(key)
+        else:
+            self._editor.show_justification_editor()
+
+    async def on_event(self, event: Event) -> None:
+        # Scroll events are consumed by the column ScrollableContainer (event.stop),
+        # so they never bubble to on_click. Select the column under the pointer
+        # before Textual forwards the wheel event for scrolling.
+        if (
+            isinstance(event, (MouseScrollUp, MouseScrollDown))
+            and not event.is_forwarded
+            and self._current_section == ids.UNIFIED_VIEW
+        ):
+            try:
+                under, _ = self.get_widget_at(int(event.x), int(event.y))
+            except Exception:
+                under = None
+            self._select_unified_from_widget(under)
+        await super().on_event(event)
 
     def on_key(self, event) -> None:
-        """Escape exits editors and view modes (maximize, response width, ...)."""
+        """Escape exits editors and view modes (maximize, response width).
+
+        Modal screens own Escape (see their BINDINGS). Do not also clear
+        maximize or 80-column preview underneath a modal.
+        """
         if event.key != "escape":
+            return
+        from textual.screen import ModalScreen
+
+        if isinstance(self.screen, ModalScreen):
             return
         if self._editor.handle_escape_from_editor(event):
             return
@@ -1303,11 +1482,11 @@ class StarfleetApp(App):
         restored: list[str] = []
         if self._maximized:
             self._restore_maximize()
-            restored.append("fullscreen")
+            restored.append("full screen")
         from sfctl.handlers.arena import ArenaHandler
 
         if isinstance(self.handler, ArenaHandler) and self.handler.clear_response_width():
-            restored.append("80-col preview")
+            restored.append("80-column preview")
         if not restored:
             return False
         self._status("Restored " + ", ".join(restored))
@@ -1316,58 +1495,62 @@ class StarfleetApp(App):
 
     _HELP_TEXT = (
         "[bold]Navigation[/bold]\n"
-        "  1/2/3      switch to model A/B/C\n"
-        "  0          overview (review, history, feedback)\n"
-        "  tab        next tab within a view\n"
-        "  shift+tab  previous tab\n"
-        "  e          toggle expand/collapse all in current tab\n\n"
+        "  1 / 2 / 3     switch to model A / B / C\n"
+        "  0             overview (review, history, feedback)\n"
+        "  Tab           next tab within a view\n"
+        "  Shift+Tab     previous tab\n"
+        "  e             expand or collapse all in the current tab\n\n"
         "[bold]Review[/bold]\n"
-        "  +/-        vote (diff=code, response=response, else=overall)\n"
-        "  y          yank diff snippet into justification\n"
-        "  n          add a reviewer comment (note)\n\n"
+        "  + / -         vote (diffs = code, response = response, else overall)\n"
+        "  y             copy a diff snippet into the justification\n"
+        "  n             add a reviewer comment\n\n"
         "[bold]Search[/bold]\n"
-        "  ctrl+f     search files (repeat to toggle fuzzy/grep)\n"
-        "  ctrl+g     search events (repeat to toggle fuzzy/grep)\n\n"
+        "  Ctrl+F        search files (press again to switch fuzzy or content)\n"
+        "  Ctrl+G        search events (press again to switch fuzzy or content)\n\n"
         "[bold]View[/bold]\n"
-        "  u          toggle unified side-by-side view\n"
-        "  f          toggle maximize / restore focused pane\n"
-        "  t          toggle translate to system locale\n"
-        "  w          preview response at 80-column terminal width (arena)\n"
-        "             centers the response in a framed 80-col box so you can\n"
-        "             judge wrapping/density as in a typical terminal; Esc exits\n"
-        "  escape     exit editor / fullscreen / 80-col preview\n\n"
+        "  u             side-by-side model columns\n"
+        "  f             maximize or restore the focused pane\n"
+        "  t             translate content to the system locale\n"
+        "  w             preview response at 80-column terminal width (arena)\n"
+        "                frames the response so wrapping matches a typical terminal;\n"
+        "                Esc exits the preview\n"
+        "  v             mark code-quality rules (arena; uses current model "
+        "on a response view)\n"
+        "  s             compare files across models\n"
+        "  Esc           leave editor, maximize, or 80-column preview\n\n"
         "[bold]Actions[/bold]\n"
-        "  ctrl+e     edit summary\n"
-        "  ctrl+n     edit comments\n"
-        "  c          copy review to clipboard\n"
-        "  C          copy comments to clipboard\n"
-        "  r          refresh data from API\n"
-        "  ctrl+r     reset local annotations and scores\n"
-        "  q          quit"
+        "  Ctrl+E        edit justification (arena: move through sections)\n"
+        "  Ctrl+N        edit comments\n"
+        "  c             copy review to the clipboard\n"
+        "  C             copy comments to the clipboard\n"
+        "  r             refresh data from the server\n"
+        "  Ctrl+R        reset local annotations and scores\n"
+        "  q             quit"
     )
 
     _TUTORIAL_TEXT = (
         "[bold]Welcome to Starfleet Control[/bold]\n\n"
-        "You're reviewing model outputs for a coding task.\n"
-        "Three models (A/B/C) each attempted the same prompt.\n"
-        "Your job: compare their work and build a structured review.\n\n"
+        "You are reviewing model outputs for a coding task.\n"
+        "Three models (A, B, and C) each attempted the same prompt.\n"
+        "Your job is to compare their work and build a structured review.\n\n"
         "[bold]Navigate[/bold]\n"
-        "  1/2/3  switch between model views\n"
-        "  0      open the overview (your review, history, feedback)\n"
-        "  tab    cycle tabs within a view (Response / Trace / Diffs)\n\n"
+        "  1 / 2 / 3   switch between model views\n"
+        "  0           open the overview (review, history, feedback)\n"
+        "  Tab         cycle tabs within a view "
+        "(Response / Trace / Diffs)\n\n"
         "[bold]Score[/bold]\n"
-        "  +/-    vote on the current context\n"
-        "         on a diff tab -> scores code quality\n"
-        "         on response tab -> scores response quality\n"
-        "         otherwise -> scores overall\n"
-        "  The scoreboard updates live with your rankings.\n\n"
+        "  + / -       vote on the current context\n"
+        "              on a diffs tab, scores code quality\n"
+        "              on the response tab, scores response quality\n"
+        "              otherwise, scores overall\n"
+        "  The scoreboard updates as you vote.\n\n"
         "[bold]Justification[/bold]\n"
-        "  y      yank a diff snippet into your justification\n"
-        "         select lines first, or yank the whole file\n"
-        "  ctrl+e edit your justification (overview tab)\n"
-        "  c      copy review to clipboard\n\n"
+        "  y           copy a diff snippet into the justification\n"
+        "              select lines first, or copy the whole file\n"
+        "  Ctrl+E      edit the justification on the overview tab\n"
+        "  c           copy the review to the clipboard\n\n"
         "Press ? for the full shortcut reference.\n"
-        "Press escape to dismiss."
+        "Press Esc to dismiss."
     )
 
     def action_toggle_emails(self) -> None:
@@ -1394,10 +1577,16 @@ class StarfleetApp(App):
                 else:
                     widget.title = f"Feedback | {ts_label}"
         self._update_sub_title()
-        self._status("Emails visible" if self._show_emails else "Emails hidden")
+        self._status(
+            "Reviewer emails visible" if self._show_emails else "Reviewer emails hidden"
+        )
 
     def action_help(self) -> None:
         self.push_screen(HelpModal(self._HELP_TEXT, "Keyboard Shortcuts"))
+
+    def action_mark_checklist(self) -> None:
+        """Open the code-quality rule catalog (arena only)."""
+        self._editor.open_checklist_mark_modal()
 
     def action_toggle_response_width(self) -> None:
         """Toggle 80-column terminal-width preview on model responses (arena)."""
@@ -1409,11 +1598,113 @@ class StarfleetApp(App):
         narrow = self.handler.toggle_response_width()
         if narrow:
             self._status(
-                f"80-col preview on — response framed at {RESPONSE_TERMINAL_WIDTH} "
-                "columns (Esc or w to exit)"
+                f"80-column preview on — response framed at "
+                f"{RESPONSE_TERMINAL_WIDTH} columns "
+                "(Esc or w to exit)"
             )
         else:
-            self._status("80-col preview off — response uses full pane width")
+            self._status(
+                "80-column preview off — response uses full pane width"
+            )
+
+    def action_shared_compare(self) -> None:
+        """Open cross-model file compare for paths any model touched."""
+        compares = self.handler.shared_file_compares()
+        if not compares:
+            self._status("No model diffs to compare.")
+            return
+        self._open_shared_compare(compares, 0)
+
+    def _open_shared_compare(self, compares: list, index: int = 0) -> None:
+        from sfctl.screens import SharedCompareScreen
+
+        async def _on_result(result: tuple[int, str, str | None] | None) -> None:
+            if not result:
+                return
+            model_index, filename, jump_line = result
+            await self.go_to_diff(model_index, filename, jump_line)
+
+        model_colors = ranking.model_letter_colors(
+            self.scores, self._get_history(), len(self.models),
+        )
+        self.push_screen(
+            SharedCompareScreen(compares, index, model_colors=model_colors),
+            _on_result,
+        )
+
+    async def _populate_shared_files_tab(self, pane: TabPane) -> None:
+        """Deferred overview tab: list cross-model files; enter opens compare."""
+        from textual.widgets import OptionList
+
+        compares = self.handler.shared_file_compares()
+        if not compares:
+            await pane.mount(
+                Static("[dim]No model diffs to compare.[/dim]")
+            )
+            return
+        multi = sum(1 for c in compares if c.n_models >= 2)
+        solo = len(compares) - multi
+        await pane.mount(
+            Static(
+                f"[bold]Files ({len(compares)})[/bold]  ·  "
+                f"{multi} multi-model  ·  {solo} solo\n"
+                "[dim]grouped by models · kind · basename · Enter to open[/]"
+            )
+        )
+        from textual.widgets.option_list import Option
+
+        from sfctl.diff_compare import (
+            build_compare_list_entries,
+            list_coverage_header_prompt,
+        )
+
+        opts = OptionList(id="overview-shared-list")
+        await pane.mount(opts)
+        model_colors = ranking.model_letter_colors(
+            self.scores, self._get_history(), len(self.models),
+        )
+        option_to_compare: list[int | None] = []
+        for entry in build_compare_list_entries(compares):
+            if entry.is_header:
+                opts.add_option(
+                    Option(
+                        list_coverage_header_prompt(
+                            entry.coverage,
+                            entry.kind,
+                            entry.count,
+                            model_colors,
+                        ),
+                        disabled=True,
+                    )
+                )
+                option_to_compare.append(None)
+                continue
+            opts.add_option(
+                Option(
+                    compares[entry.compare_index].list_prompt(model_colors),
+                    id=f"f{entry.compare_index}",
+                )
+            )
+            option_to_compare.append(entry.compare_index)
+        self._shared_compares_cache = compares
+        self._shared_option_to_compare = option_to_compare
+        opts.focus()
+
+    def on_option_list_option_selected(self, event) -> None:
+        """Open shared compare when a Shared-tab file is selected."""
+        if getattr(event.option_list, "id", None) != "overview-shared-list":
+            return
+        compares = getattr(self, "_shared_compares_cache", None)
+        mapping = getattr(self, "_shared_option_to_compare", None)
+        if not compares or not mapping:
+            return
+        opt_i = event.option_index
+        if opt_i is None or not (0 <= opt_i < len(mapping)):
+            return
+        idx = mapping[opt_i]
+        if idx is None:
+            return
+        self._open_shared_compare(compares, idx)
 
     def _maybe_show_tutorial(self) -> None:
         config = load_config()

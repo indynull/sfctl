@@ -8,6 +8,7 @@ from rich.markdown import Markdown as RichMarkdown
 from textual.widgets import Link, Static, TabbedContent, TabPane
 
 from sfctl import ids
+from sfctl.constants import DIFF_ADD_STYLE, DIFF_DEL_STYLE
 from sfctl.formatting import bump_headings, format_timestamp, sanitize
 from sfctl.handlers.base import TaskHandler
 from sfctl.models import ParsedContent
@@ -32,7 +33,9 @@ class ProposalHandler(TaskHandler):
     """Project proposal: single model with rubrics, issues, trace, diffs."""
 
     def parse(self) -> tuple[ParsedContent, list[ModelData]]:
-        history = self.data.get("history", [])
+        from sfctl.history import as_history_list
+
+        history = as_history_list(self.data.get("history"))
         proposal = parse_proposal(history, self.data.get("trace"))
         self._app.proposal = proposal
         parsed = ParsedContent(
@@ -134,7 +137,9 @@ class ProposalHandler(TaskHandler):
         )
 
         if p.file_diffs:
-            diffs_pane = TabPane(f"Diffs ({len(p.file_diffs)})", id=ids.tab_diffs_id(mid))
+            diffs_pane = TabPane(
+                f"Diffs ({len(p.file_diffs)})", id=ids.tab_diffs_id(mid)
+            )
             await tabs.add_pane(diffs_pane)
             await diffs_pane.mount_all([
                 LazyCollapsible.for_diff(fd.filename, fd.diff, "S", classes="inner")
@@ -222,10 +227,10 @@ class ProposalHandler(TaskHandler):
                 statics.append(Static(Redlines(old_t, new_t).output_rich))
             elif new_t:
                 statics.append(Static(f"[bold]{label}:[/bold]"))
-                statics.append(Static(f"[green]{sanitize(new_t)}[/green]"))
+                statics.append(Static(f"[{DIFF_ADD_STYLE}]{sanitize(new_t)}[/]"))
             else:
                 statics.append(Static(f"[bold]{label}:[/bold]"))
-                statics.append(Static(f"[red]{sanitize(old_t or '')}[/red]"))
+                statics.append(Static(f"[{DIFF_DEL_STYLE}]{sanitize(old_t or '')}[/]"))
         return statics
 
     def history_detail_widgets(self, entry: dict, changed: bool) -> list:

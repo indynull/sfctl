@@ -9,6 +9,7 @@ from textual.widgets import Markdown, Static, TextArea
 
 from sfctl import ids, ranking
 from sfctl.diff import parse_content
+from sfctl.diff_compare import compare_all_shared
 from sfctl.handlers.base import TaskHandler
 from sfctl.history import has_meaningful_changes, history_justification
 
@@ -97,11 +98,14 @@ class RankingHandler(TaskHandler):
 
     def scoreboard_parts(self) -> list[str]:
         app = self._app
-        rank_str = ranking.rankings_summary(app.scores, app.data.get("history", []))
+        rank_str = ranking.rankings_summary(app.scores, app._get_history())
         parts: list[str] = []
         if rank_str:
             parts.append(rank_str)
         return parts
+
+    def shared_file_compares(self) -> list:
+        return compare_all_shared(self._app.models)
 
     def hidden_actions(self) -> frozenset[str]:
         return frozenset({"go_model_proposal"})

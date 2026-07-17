@@ -153,7 +153,7 @@ class ProposalData:
 
 @dataclass(slots=True)
 class Annotation:
-    """A single note about a model -- a yank, a vote, or both."""
+    """A single note about a model — a snippet, a vote, or both."""
 
     filename: str = ""
     line_ref: str = ""

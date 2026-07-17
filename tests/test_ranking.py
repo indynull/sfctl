@@ -151,19 +151,19 @@ class TestRankingsSummary:
     def test_both_local_and_previous(self, fixture_data):
         scores = [ModelScores(overall=3), ModelScores(overall=-1), ModelScores(overall=1)]
         result = rankings_summary(scores, fixture_data["history"])
-        assert "Last:" in result
-        assert "Yours:" in result
+        assert "Previous:" in result
+        assert "Local:" in result
 
     def test_previous_only(self, fixture_data):
         scores = [ModelScores(), ModelScores(), ModelScores()]
         result = rankings_summary(scores, fixture_data["history"])
-        assert "Last:" in result
-        assert "Yours:" not in result
+        assert "Previous:" in result
+        assert "Local:" not in result
 
     def test_local_only(self):
         scores = [ModelScores(overall=1), ModelScores(overall=-1)]
         result = rankings_summary(scores, [])
-        assert "Last:" not in result
+        assert "Previous:" not in result
         assert ">" in result
 
     def test_neither(self):

@@ -14,7 +14,17 @@ from textual.strip import Strip
 from textual.widget import Widget
 from textual.widgets import Collapsible, Static, TextArea
 
-from sfctl.constants import ARROW_DOWN, ARROW_RIGHT, ARROW_UP
+from sfctl.constants import (
+    ARROW_DOWN,
+    ARROW_RIGHT,
+    ARROW_UP,
+    DIFF_ADD,
+    DIFF_ADD_TINT,
+    DIFF_DEL,
+    DIFF_DEL_TINT,
+    DIFF_HUNK,
+    DIFF_HUNK_TINT,
+)
 from sfctl.diff import (
     DiffLine,
     build_diff_line_map,
@@ -84,6 +94,7 @@ class SplitHandle(Widget):
         top.styles.height = f"{round(frac * 100)}fr"
         bottom.styles.height = f"{round((1 - frac) * 100)}fr"
 
+
 _KOTLIN_HIGHLIGHTS = """\
 [
   "fun" "val" "var" "class" "object" "interface" "enum" "when" "if" "else"
@@ -139,15 +150,11 @@ def _load_extra_language(lang: str) -> tuple[object | None, str | None]:
     return None, None
 
 
-_MARKER_ADD = Style(color="#4ec94e", bold=True)
-_MARKER_DEL = Style(color="#e05050", bold=True)
-_MARKER_HUNK = Style(color="#5f87ff", bold=True)
+_MARKER_ADD = Style(color=DIFF_ADD, bold=True)
+_MARKER_DEL = Style(color=DIFF_DEL, bold=True)
+_MARKER_HUNK = Style(color=DIFF_HUNK, bold=True)
 _KIND_MARKER = {"add": ("+", _MARKER_ADD), "del": ("-", _MARKER_DEL), "hunk": ("~", _MARKER_HUNK)}
-
-_TINT_ADD = (0, 20, 0)
-_TINT_DEL = (20, 0, 0)
-_TINT_HUNK = (0, 8, 18)
-_KIND_TINT = {"add": _TINT_ADD, "del": _TINT_DEL, "hunk": _TINT_HUNK}
+_KIND_TINT = {"add": DIFF_ADD_TINT, "del": DIFF_DEL_TINT, "hunk": DIFF_HUNK_TINT}
 
 
 def _blend_bg(base: Color, tint: tuple[int, int, int]) -> Style:
@@ -222,7 +229,7 @@ class DiffDisplay(TextArea):
     BINDINGS = [
         Binding("+", "vote_up", f"{ARROW_UP} Code", show=True),
         Binding("-", "vote_down", f"{ARROW_DOWN} Code", show=True),
-        Binding("y", "yank", "Yank", show=True),
+        Binding("y", "yank", "Copy Snippet", show=True),
     ]
 
     def action_vote_up(self) -> None:
@@ -397,9 +404,17 @@ class LazyCollapsible(Collapsible):
         self.lazy = lazy or _LazyPayload()
 
     @classmethod
-    def for_diff(cls, filename: str, diff: str, letter: str, **kwargs) -> LazyCollapsible:
+    def for_diff(
+        cls,
+        filename: str,
+        diff: str,
+        letter: str,
+        *,
+        title: str | None = None,
+        **kwargs,
+    ) -> LazyCollapsible:
         return cls(
-            title=filename,
+            title=title if title is not None else filename,
             collapsed=True,
             lazy=_LazyPayload(diff=diff, letter=letter, filename=filename),
             **kwargs,
