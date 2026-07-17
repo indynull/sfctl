@@ -132,6 +132,39 @@ class TestArenaParse:
         curr["code_quality_justification"] = {"value": "totally different"}
         assert has_arena_changes(prev, curr)
 
+    def test_checklist_change_lines_list_rule_swaps(self, arena_data):
+        """History Changes must name rules, not only A:1→A:1 counts."""
+        from sfctl.arena import (
+            arena_checklist_change_lines,
+            has_arena_changes,
+            parse_arena_meta,
+        )
+
+        meta = parse_arena_meta(arena_data)
+        prev = arena_data["history"][0]
+        curr = json.loads(json.dumps(prev))
+        # Swap C's Organisation violation for a Prose one — count may stay C:1.
+        cells = curr["response_clarity_checklist"]["cells"]
+        # Clear C Organisation (row 0 col 2)
+        cells[0][2] = {"_sf_rich": True, "value": []}
+        # Mark C Prose (row 1 col 2)
+        cells[1][2] = {"_sf_rich": True, "value": ["p14_violated"]}
+        assert has_arena_changes(prev, curr)
+        lines = arena_checklist_change_lines(prev, curr, meta.rule_labels)
+        joined = "\n".join(lines)
+        assert "Checklist:" in joined
+        assert "+" in joined and "-" in joined
+        # Old C rule removed, new rule added (titles from catalog when known)
+        assert "C:" in joined
+        # Must not be only a no-op count line without add/remove detail
+        assert any(ln.strip().startswith("+") or "]+" in ln for ln in lines)
+
+    def test_checklist_change_lines_empty_when_same(self, arena_data):
+        from sfctl.arena import arena_checklist_change_lines, parse_arena_meta
+
+        meta = parse_arena_meta(arena_data)
+        entry = arena_data["history"][0]
+        assert arena_checklist_change_lines(entry, entry, meta.rule_labels) == []
 
 class TestArenaHandler:
     def test_handler_parse_and_headers(self, arena_data, make_app):

@@ -584,6 +584,8 @@ def has_arena_changes(prev: dict, curr: dict) -> bool:
     for key, _ in JUSTIFICATION_KEYS:
         if _text_field(prev, key) != _text_field(curr, key):
             return True
+    if set(selections_from_entry(prev)) != set(selections_from_entry(curr)):
+        return True
     return checklist_signature(prev) != checklist_signature(curr)
 
 
@@ -601,19 +603,62 @@ def arena_justification_diff_texts(prev: dict, curr: dict) -> tuple[str, str] | 
     return (old or "(none)", new or "(none)")
 
 
+def _selection_label(
+    model_idx: int,
+    choice_id: str,
+    rule_labels: dict[str, str] | None,
+) -> str:
+    """``A: No bloated body`` for history change lines."""
+    labels = rule_labels or {}
+    letter = chr(65 + model_idx) if 0 <= model_idx < 26 else str(model_idx)
+    title = labels.get(choice_id, choice_id)
+    return f"{letter}: {sanitize(title)}"
+
+
 def arena_checklist_change_lines(
     prev: dict,
     curr: dict,
     rule_labels: dict[str, str] | None = None,
 ) -> list[str]:
-    """Rich-markup lines summarizing checklist cell changes."""
-    if checklist_signature(prev) == checklist_signature(curr):
+    """Rich-markup lines for CQ violation selection changes.
+
+    Rankings show old → new values; justifications show a redline. Checklist
+    changes used to be only count summaries (``A:1 → A:1``), which hid rule
+    swaps. Prefer explicit per-model add/remove of marked rules, with a count
+    summary when totals move.
+    """
+    old_pairs = set(selections_from_entry(prev))
+    new_pairs = set(selections_from_entry(curr))
+    sig_changed = checklist_signature(prev) != checklist_signature(curr)
+    if old_pairs == new_pairs and not sig_changed:
         return []
+
+    lines: list[str] = []
     old_cl = checklist_from_entry(prev, rule_labels)
     new_cl = checklist_from_entry(curr, rule_labels)
     old_s = checklist_violation_summary(old_cl) if old_cl else "(none)"
     new_s = checklist_violation_summary(new_cl) if new_cl else "(none)"
-    return [f"[bold]Checklist:[/]  {old_s}  [dim]\u2192[/]  {new_s}"]
+    if old_s != new_s:
+        lines.append(
+            f"[bold]Checklist:[/]  {old_s or '[dim](none)[/]'}  "
+            f"[dim]\u2192[/]  {new_s or '[dim](none)[/]'}"
+        )
+    else:
+        lines.append("[bold]Checklist:[/]  selections changed")
+
+    added = sorted(new_pairs - old_pairs, key=lambda p: (p[0], p[1]))
+    removed = sorted(old_pairs - new_pairs, key=lambda p: (p[0], p[1]))
+    for model_idx, cid in added:
+        lab = _selection_label(model_idx, cid, rule_labels)
+        lines.append(f"  [green]+[/] {lab}")
+    for model_idx, cid in removed:
+        lab = _selection_label(model_idx, cid, rule_labels)
+        lines.append(f"  [red]-[/] {lab}")
+
+    # Signature-only change (structure/order) without id-level add/remove.
+    if not added and not removed and sig_changed:
+        lines.append("  [dim](cell structure changed)[/]")
+    return lines
 
 
 def format_arena_history_meta(
