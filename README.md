@@ -35,11 +35,35 @@ uv tool install git+ssh://git@github.com/indynull/sfctl.git
 sfctl t-abc123def
 ```
 
-On first run, you'll be prompted to select a browser profile for Starfleet cookies. The selection is saved to your OS config directory (`~/.config/starfleet/` on Linux, `~/Library/Application Support/starfleet/` on macOS).
+On first run, you'll be prompted to select a browser profile for Starfleet cookies. The selection is saved to your OS config directory (`~/.config/starfleet/` on Linux, `~/Library/Application Support/starfleet/` on macOS, `%APPDATA%\starfleet\` on Windows).
+
+### Authentication
+
+Auth resolution order (first wins):
+
+1. `STARFLEET_ACCESS_TOKEN` environment variable  
+2. `-t` / `--token` (saved to config as `access_token`)  
+3. Saved `access_token` in config  
+4. Browser cookies (`-c` / saved profile / interactive picker)
+
+**Windows:** browser cookie databases are often locked or unavailable to
+`browser-cookie3` (DPAPI / browser running). Prefer an access token:
+
+```
+set STARFLEET_ACCESS_TOKEN=your-token-here   # cmd
+# or PowerShell: $env:STARFLEET_ACCESS_TOKEN = "your-token-here"
+sfctl t-abc123def
+```
+
+Or: `sfctl t-abc123def -t your-token-here` (persists in config).
+
+Copy the token from the browser: DevTools → Application → Cookies → Starfleet
+API host → `accessToken`. Clear with `sfctl --clear-config access_token`.
 
 ### Options
 
 ```
+sfctl t-abc123def -t mytoken             # access token (saved to config)
 sfctl t-abc123def -c /path/to/Cookies   # explicit cookie file
 sfctl t-abc123def -v                     # verbose output
 sfctl t-abc123def --dump                 # dump raw JSON and exit
@@ -47,6 +71,7 @@ sfctl -f tests/fixtures/task_sample.json # load from fixture (offline)
 sfctl --show-config                      # print config
 sfctl --set api_base https://staging...  # set config value
 sfctl --clear-config cookie_file         # clear a config key
+sfctl --clear-config access_token        # clear saved token
 ```
 
 ### Fixture mode
