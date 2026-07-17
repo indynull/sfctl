@@ -75,6 +75,13 @@ def parse_diff_lines(diff_text: str) -> list[DiffLine]:
     for line in diff_text.split("\n"):
         if line.startswith("@@"):
             result.append(DiffLine("hunk", line, line))
+        elif (
+            line.startswith("+++")
+            or line.startswith("---")
+            or line.startswith("diff ")
+            or line.startswith("index ")
+        ):
+            result.append(DiffLine("meta", line, line))
         elif line.startswith("+"):
             result.append(DiffLine("add", line[1:], line))
         elif line.startswith("-"):
@@ -85,6 +92,18 @@ def parse_diff_lines(diff_text: str) -> list[DiffLine]:
 
 
 _TRIPLE_QUOTES = ('"""', "'''")
+_LONE_TRIPLE_QUOTE = re.compile(r'^(\s*)("""|\'\'\')\s*$')
+_ELLIPSIS_MARKERS = frozenset({"…", "..."})
+_CODE_START_RE = re.compile(
+    r"^(?:"
+    r"def |async def |class |import |from |return |yield |raise |assert "
+    r"|pass\b|break\b|continue\b|if |elif |else:|for |while |try:|except"
+    r"|finally:|with |match |case |@"
+    # Assignments / annotated assigns (require ``=``, not bare ``-`` in prose).
+    r"|[A-Za-z_][\w.]*\s*(?::[^=]+)?="
+    r"|[A-Za-z_][\w.]*\("
+    r")"
+)
 
 
 def build_highlighted_sides(
@@ -95,9 +114,10 @@ def build_highlighted_sides(
     Splits a unified diff into two coherent views (old = ctx+del,
     new = ctx+add) so that tree-sitter can parse each side without
     seeing interleaved added/deleted code.  Hunk headers are replaced
-    with blank lines and orphaned triple-quote closers at hunk
-    boundaries get a synthetic opener injected so that tree-sitter
-    doesn't treat them as string-start tokens.
+    with blank lines. Mid-snippet ellipsis cuts through docstrings are
+    balanced both ways: orphan closers get a synthetic opener, and open
+    strings that never close before ``…`` + code get a synthetic closer,
+    so tree-sitter does not paint the following source as a string.
 
     Returns (new_lines, new_map, old_lines, old_map) where each map
     entry gives the unified diff-line index for that result line,
@@ -110,6 +130,128 @@ def build_highlighted_sides(
 
 def _count_triple_quotes(text: str) -> int:
     return sum(text.count(tq) for tq in _TRIPLE_QUOTES)
+
+
+def _looks_like_code_start(text: str) -> bool:
+    """True when *text* looks like source code rather than docstring prose."""
+    s = text.strip()
+    if not s:
+        return False
+    if s.startswith("#"):
+        return True
+    return _CODE_START_RE.match(s) is not None
+
+
+def _prev_suggests_string_open(prev: str) -> bool:
+    """True when the previous line commonly precedes a real string opener."""
+    ps = prev.rstrip()
+    return ps.endswith((":", "=", "(", "[", "{", ","))
+
+
+def _toggle_triple_quote_state(line: str, open_q: str | None) -> str | None:
+    """Update open-string state after scanning *line* for triple quotes."""
+    i = 0
+    n = len(line)
+    while i < n:
+        if line.startswith('"""', i) or line.startswith("'''", i):
+            q = line[i : i + 3]
+            if open_q is None:
+                open_q = q
+            elif open_q == q:
+                open_q = None
+            i += 3
+        else:
+            i += 1
+    return open_q
+
+
+def _next_content_line(lines: list[str], start: int) -> str | None:
+    """First non-empty, non-ellipsis line at or after *start*, or None."""
+    for k in range(start, len(lines)):
+        t = lines[k].strip()
+        if t and t not in _ELLIPSIS_MARKERS:
+            return t
+    return None
+
+
+def _balance_triple_quotes(
+    lines: list[str],
+    rmap: list[int],
+) -> tuple[list[str], list[int]]:
+    """Balance triple quotes so mid-snippet cuts do not swallow following code.
+
+    Shared-compare snippets insert ``…`` when truncating large files. Two
+    failure modes both paint legitimate code as a string/comment:
+
+    1. **Orphan closer after ellipsis** — the opener was cut away; the leftover
+       ``\"\"\"`` is parsed as an opener and every following line is a string.
+       Fix: inject a synthetic opener before the orphan closer.
+    2. **Open string before ellipsis** — truncation cuts *through* a docstring
+       (opener in the head, closer lost); code after ``…`` stays inside the
+       open string until EOF. Fix: inject a synthetic closer before the
+       ellipsis when the text after it looks like code (not docstring prose).
+    """
+    out_l: list[str] = []
+    out_m: list[int] = []
+    open_q: str | None = None
+
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+
+        # Close an open triple-quote before a mid-snippet ellipsis when the
+        # following content is code (truncation dropped the real closer).
+        if stripped in _ELLIPSIS_MARKERS and open_q is not None:
+            nxt = _next_content_line(lines, idx + 1)
+            if nxt is None or _looks_like_code_start(nxt):
+                out_l.append(open_q)
+                out_m.append(-1)
+                open_q = None
+
+        lone = _LONE_TRIPLE_QUOTE.match(line)
+        if lone and open_q is None:
+            q = lone.group(2)
+            prev: str | None = None
+            prev_was_ellipsis = False
+            for j in range(len(out_l) - 1, -1, -1):
+                raw = out_l[j]
+                prev_stripped = raw.strip()
+                if not prev_stripped:
+                    continue
+                # Skip openers/closers we injected on earlier steps.
+                if out_m[j] < 0 and prev_stripped in _TRIPLE_QUOTES:
+                    continue
+                if prev_stripped in _ELLIPSIS_MARKERS:
+                    prev_was_ellipsis = True
+                    break
+                prev = raw
+                break
+
+            is_orphan = False
+            if prev_was_ellipsis:
+                is_orphan = True
+            elif prev is None:
+                # Start of side text: real module docstring, unless the next
+                # content is already code (closer for text above the window).
+                nxt = _next_content_line(lines, idx + 1)
+                is_orphan = nxt is not None and _looks_like_code_start(nxt)
+            elif not _prev_suggests_string_open(prev):
+                nxt = _next_content_line(lines, idx + 1)
+                # Docstring tail: prose above, code (or EOF) below.
+                is_orphan = nxt is None or _looks_like_code_start(nxt)
+
+            if is_orphan:
+                out_l.append(q)
+                out_m.append(-1)
+                open_q = q
+
+        out_l.append(line)
+        out_m.append(rmap[idx])
+        open_q = _toggle_triple_quote_state(line, open_q)
+
+    if open_q is not None:
+        out_l.append(open_q)
+        out_m.append(-1)
+    return out_l, out_m
 
 
 def _build_side(
@@ -152,13 +294,7 @@ def _build_side(
             result.append(dl.text)
             rmap.append(i)
 
-    # If the overall triple-quote count is odd (e.g. a trailing context line
-    # opens a string whose close is below the diff), append a balancer.
-    if _count_triple_quotes("\n".join(result)) % 2 == 1:
-        result.append('"""')
-        rmap.append(-1)
-
-    return result, rmap
+    return _balance_triple_quotes(result, rmap)
 
 
 def build_diff_line_map(diff_text: str) -> dict[int, int]:
@@ -245,7 +381,12 @@ def strip_diff_preamble(diff_text: str) -> str:
 
 
 def extract_file_diffs(diff_text: str) -> list[FileDiff]:
-    """Split a multi-file unified diff into per-file blocks."""
+    """Split a multi-file unified diff into per-file blocks.
+
+    Empty new files (git ``new file mode`` with no hunks, e.g. empty
+    ``__init__.py``) still produce a short placeholder so the path is visible
+    in the UI instead of an empty patch that looks like "no models touched".
+    """
     if not diff_text or not diff_text.strip():
         return []
     blocks = re.split(r"(?=diff --git)", diff_text.strip())
@@ -267,7 +408,16 @@ def extract_file_diffs(diff_text: str) -> list[FileDiff]:
             if line.startswith("+++ b/"):
                 fname = line[6:].strip()
                 break
-        files.append(FileDiff(filename=fname, diff=strip_diff_preamble(block)))
+        body = strip_diff_preamble(block)
+        if not body.strip():
+            # Preamble-only: empty new file, pure mode change, etc.
+            if "new file mode" in block:
+                body = "@@ -0,0 +0,0 @@\n# empty new file"
+            elif "deleted file mode" in block:
+                body = "@@ -0,0 +0,0 @@\n# deleted file"
+            else:
+                continue
+        files.append(FileDiff(filename=fname, diff=body))
     return files
 
 

@@ -5,6 +5,15 @@ from __future__ import annotations
 import pytest
 
 
+class TestSplitHandle:
+    def test_stores_top_and_bottom_ids(self):
+        from sfctl.widgets import SplitHandle
+
+        h = SplitHandle("unified-responses", "unified-overview", id="h1")
+        assert h._top_id == "unified-responses"
+        assert h._bottom_id == "unified-overview"
+
+
 class TestSanitize:
     def test_strips_brackets_and_newlines(self):
         from sfctl.formatting import sanitize

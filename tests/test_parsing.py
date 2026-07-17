@@ -102,6 +102,21 @@ class TestExtractFileDiffs:
         assert len(files) == 1
         assert files[0].filename == "unknown-file"
 
+    def test_empty_new_file_kept(self):
+        """Git empty blobs (e.g. empty __init__.py) must not become blank paths."""
+        from sfctl.diff import extract_file_diffs
+
+        diff = (
+            "diff --git a/static/__init__.py b/static/__init__.py\n"
+            "new file mode 100644\n"
+            "index 0000000..e69de29\n"
+        )
+        files = extract_file_diffs(diff)
+        assert len(files) == 1
+        assert files[0].filename == "static/__init__.py"
+        assert files[0].diff.strip()
+        assert "empty" in files[0].diff.lower()
+
 
 class TestBuildDiffLineMap:
     def test_hunk_header_mapping(self):
@@ -173,6 +188,135 @@ class TestBuildHighlightedSides:
         for i, m in enumerate(new_map):
             if m == -1:
                 assert new_lines[i] == '"""'
+
+    def test_ellipsis_docstring_cut_does_not_swallow_code(self):
+        """Mid-snippet ellipsis through a docstring must not string-highlight code."""
+        import tree_sitter_python as tspython
+        from tree_sitter import Language, Parser, Query, QueryCursor
+
+        from sfctl.diff import build_highlighted_sides, parse_diff_lines
+
+        # Shared-compare style: head of a function, ellipsis, docstring tail + body.
+        diff = (
+            "@@ -1,20 +1,20 @@\n"
+            " def compile_solver(dependant):\n"
+            '     """\n'
+            "     Walk the graph and emit a flat solver.\n"
+            " …\n"
+            "     common no-overrides path.\n"
+            '     """\n'
+            "     plan = get_or_build_plan(dependant)\n"
+            "     return plan\n"
+        )
+        dl = parse_diff_lines(diff)
+        new_lines, new_map, _, _ = build_highlighted_sides(dl)
+        assert any(m < 0 for m in new_map), "expected synthetic balancer for ellipsis cut"
+
+        lang = Language(tspython.language())
+        parser = Parser(lang)
+        query = Query(lang, "(string) @string")
+        tree = parser.parse("\n".join(new_lines).encode())
+        cursor = QueryCursor(query)
+        captures = cursor.captures(tree.root_node)
+        string_rows: set[int] = set()
+        for _name, nodes in captures.items():
+            for node in nodes:
+                for r in range(node.start_point[0], node.end_point[0] + 1):
+                    string_rows.add(r)
+
+        plan_idx = next(
+            i for i, line in enumerate(new_lines) if "plan = get_or_build_plan" in line
+        )
+        assert plan_idx not in string_rows, (
+            f"code line highlighted as string: {new_lines[plan_idx]!r}"
+        )
+
+    def test_ellipsis_open_docstring_before_cut_does_not_swallow_code(self):
+        """Truncation mid-docstring (opener kept, closer lost) must close before code.
+
+        Reproduces shared-compare large-file snips that keep the head of a
+        class docstring then jump with ``…`` into later function bodies.
+        """
+        import tree_sitter_python as tspython
+        from tree_sitter import Language, Parser, Query, QueryCursor
+
+        from sfctl.diff import build_highlighted_sides, parse_diff_lines
+
+        diff = (
+            "@@ -0,0 +1,12 @@\n"
+            "+@dataclass\n"
+            "+class HubProblem:\n"
+            '+    """A hub-location instance defined on a weighted NetworkX graph.\n'
+            "+\n"
+            "+    Attributes\n"
+            "+    ----------\n"
+            "+    graph : nx.Graph\n"
+            "+    p : int\n"
+            "+\n"
+            "+…\n"
+            "+    if try_exact and problem.graph.number_of_nodes() <= exact_limit:\n"
+            "+        results.append(solve_bruteforce(problem))\n"
+            "+    return results\n"
+            "+def draw(problem):\n"
+            '+    """Render hubs."""\n'
+            "+    pass\n"
+        )
+        dl = parse_diff_lines(diff)
+        new_lines, new_map, _, _ = build_highlighted_sides(dl)
+        assert any(m < 0 for m in new_map), "expected synthetic closer before ellipsis"
+
+        lang = Language(tspython.language())
+        parser = Parser(lang)
+        query = Query(lang, "(string) @string")
+        tree = parser.parse("\n".join(new_lines).encode())
+        captures = QueryCursor(query).captures(tree.root_node)
+        string_rows: set[int] = set()
+        for _name, nodes in captures.items():
+            for node in nodes:
+                for r in range(node.start_point[0], node.end_point[0] + 1):
+                    string_rows.add(r)
+
+        for needle in (
+            "if try_exact and problem.graph.number_of_nodes()",
+            "results.append(solve_bruteforce",
+            "def draw(problem):",
+            "pass",
+        ):
+            idx = next(i for i, line in enumerate(new_lines) if needle in line)
+            assert idx not in string_rows, (
+                f"code highlighted as string: {new_lines[idx]!r} (rows={sorted(string_rows)})"
+            )
+
+    def test_module_docstring_not_treated_as_orphan(self):
+        """Hyphenated prose after a module docstring must not force a balancer."""
+        from sfctl.diff import build_highlighted_sides, parse_diff_lines
+
+        diff = (
+            "@@ -0,0 +1,6 @@\n"
+            '+"""\n'
+            "+Ahead-of-time dependency injection compiler.\n"
+            '+"""\n'
+            "+\n"
+            "+from __future__ import annotations\n"
+            "+def foo():\n"
+            "+    return 1\n"
+        )
+        dl = parse_diff_lines(diff)
+        new_lines, new_map, _, _ = build_highlighted_sides(dl)
+        # No synthetic opener immediately before the module docstring opener.
+        opens_before_module = 0
+        for i, line in enumerate(new_lines):
+            following = "\n".join(new_lines[i + 1 : i + 3])
+            if (
+                line.strip() == '"""'
+                and "Ahead-of-time" in following
+                and i > 0
+                and new_map[i - 1] < 0
+                and new_lines[i - 1].strip() == '"""'
+            ):
+                opens_before_module += 1
+        assert opens_before_module == 0
+        assert "from __future__ import annotations" in new_lines
 
 
 class TestBumpHeadings:
@@ -621,7 +765,8 @@ class TestProposalRubricChanges:
         changes = proposal_rubric_changes(prev, curr)
         assert len(changes) == 1
         assert "C" in changes[0]
-        assert "[green]" in changes[0]
+        from sfctl.constants import DIFF_ADD
+        assert DIFF_ADD in changes[0]
 
     def test_removals(self):
         from sfctl.proposal import proposal_rubric_changes
@@ -631,7 +776,8 @@ class TestProposalRubricChanges:
         changes = proposal_rubric_changes(prev, curr)
         assert len(changes) == 1
         assert "B" in changes[0]
-        assert "[red]" in changes[0]
+        from sfctl.constants import DIFF_DEL
+        assert DIFF_DEL in changes[0]
 
     def test_no_changes(self):
         from sfctl.proposal import proposal_rubric_changes
